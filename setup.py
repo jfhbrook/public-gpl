@@ -18,7 +18,7 @@ setup(
     classifiers=[
         "Programming Language :: Python",
         "Development Status :: 4 - Beta",
-        "Operating System :: Linux",
+        "Operating System :: OS Independent",
         "Programming Language :: Python :: 3.7",
         "License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)",  # noqa
         "Topic :: System :: Shells"
