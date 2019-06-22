@@ -29,7 +29,7 @@ I use Conda for development. You can create an environment using the included
 `environment.yml` file by running `conda env create`, and then running
 `conda activate gshell.py`.
 
-Tasks are via make, and include `doc`, `test`, `lint`, `clean`, `package` and
+Tasks are via make, and include `test`, `lint`, `clean`, `package` and
 `publish`.
 
 
