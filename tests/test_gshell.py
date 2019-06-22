@@ -9,6 +9,7 @@ from gshell import (
 )
 from gshell import EmptyStringError, BadQuotingError
 
+
 @pytest.mark.parametrize('cmdline,argv,exc_cls', [
     ('foo bar', ['foo', 'bar'], None),
     ("foo 'bar'", ['foo', 'bar'], None),
@@ -62,6 +63,7 @@ def test_cmdline(cmdline, argv, exc_cls):
 
         assert res == argv
 
+
 @pytest.mark.parametrize('in_,out', [
     ("", "''"),
     ("a", "'a'"),
@@ -87,7 +89,7 @@ def test_quote(in_, out):
     ("\\\\", "\\", None),
     ("\\\n", "", None),
     ("'\\''", None, BadQuotingError),
-    ( "\"\\\"\"", "\"", None),
+    ("\"\\\"\"", "\"", None),
     ('"', None, BadQuotingError),
     ("'", None, BadQuotingError),
     ("\x22\\\\\"", "\\", None),

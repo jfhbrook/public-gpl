@@ -1,5 +1,8 @@
+test:
+	pytest -vvv ./tests
+
 lint:
-	flake8 ./gshell.py
+	flake8 ./gshell.py ./tests
 
 package:
 	python setup.py check
