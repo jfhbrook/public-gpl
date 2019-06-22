@@ -21,7 +21,7 @@ from gshell import g_shell_parse_argv, g_shell_quote, g_shell_unquote
 I haven't found a nice way to turn the docstrings in `gshell.py` into a simple
 markdown document - sphinx is incredibly overkill and won't output markdown!
 So for now I'd encourage you to
-[read the docstrings in the source code](https://github.com/jfhbrook/gshell.py/blob/master/gshell.py').
+[read the docstrings in the source code](https://github.com/jfhbrook/gshell.py/blob/master/gshell.py).
 
 ## Development and Tests
 
