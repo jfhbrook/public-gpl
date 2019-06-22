@@ -70,7 +70,7 @@ def g_shell_quote(unquoted_string):
 
     dest = "'"
     p = 0
-    l = len(unquoted_string)
+    l = len(unquoted_string)  # noqa
 
     while p < l:
         if unquoted_string[p] == "'":
@@ -110,10 +110,9 @@ def g_shell_unquote(quoted_string):
 
     Returns: (type str): an unquoted string
     """
-    unquoted = 0
     end = 0
     start = 0
-    l = len(quoted_string)
+    l = len(quoted_string)  # noqa
     retval = ''
 
     # Lord forgive me for what I'm about to do...
@@ -221,7 +220,7 @@ def tokenize_command_line(command_line):
     retval = []
     quoted = False
 
-    l = len(command_line)
+    l = len(command_line)  # noqa
     i = 0
 
     while i < l:
@@ -310,7 +309,6 @@ def tokenize_command_line(command_line):
         )
 
     return retval
-
 
 
 def g_shell_parse_argv(command_line):
