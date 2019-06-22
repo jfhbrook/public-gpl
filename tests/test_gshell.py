@@ -4,10 +4,10 @@
 
 import pytest
 
-from pyxsession.gshell import (
+from gshell import (
     g_shell_parse_argv, g_shell_quote, g_shell_unquote
 )
-from pyxsession.gshell import EmptyStringError, BadQuotingError
+from gshell import EmptyStringError, BadQuotingError
 
 @pytest.mark.parametrize('cmdline,argv,exc_cls', [
     ('foo bar', ['foo', 'bar'], None),
