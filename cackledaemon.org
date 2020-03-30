@@ -176,6 +176,14 @@ class CackledaemonException: System.Exception {
     CackledaemonException([string]$Message) : base($Message) {}
 }
 
+class CackledaemonLogRotateAlreadyRunningException: CackledaemonException {
+    CackledaemonLogRotateAlreadyRunningException([string]$Message) : base($Message) {}
+}
+
+class CackledaemonLogRotateNotRunningException: CackledaemonException {
+    CackledaemonLogRotateNotRunningException([string]$Message) : base($Message) {}
+}
+
 class CackledaemonAlreadyRunningException: CackledaemonException {
     CackledaemonAlreadyRunningException([string]$Message) : base($Message) {}
 }
@@ -239,7 +247,19 @@ will do this every configured amount of seconds indefinitely.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
+function Get-CackledaemonLogRotateJob {
+    Get-Job -Name 'CackledaemonLogRotateJob'
+}
+
 function Start-CackledaemonLogRotateJob {
+    Invoke-EnsureCackledaemonWD
+
+    If (Get-CackledaemonLogRotateJob | Where-Object { $_.State -eq 'Running' }) {
+        throw [CackledaemonLogRotateNotRunningException]::new(
+            "The Cackledaemon logrotate job is already running!"
+        )
+    }
+
     Start-Job `
     -Name 'CackledaemonLogRotateJob' `
     -InitializationScript {
@@ -286,6 +306,14 @@ function Start-CackledaemonLogRotateJob {
             Start-Sleep -Seconds $CackledaemonLogCheckTime
         }
     }
+}
+
+function Stop-CackledaemonLogRotateJob {
+    Stop-Job -Name 'CackledaemonLogRotateJob'
+}
+
+function Remove-CackledaemonLogRotateJob {
+    Remove-Job -Name 'CackledaemonLogRotateJob'
 }
 
 #+END_SRC
@@ -438,6 +466,8 @@ function Start-EmacsDaemon {
         )
     }
 
+    Invoke-EnsureCackledaemonWD
+
     Write-CackledaemonLog "Starting the Emacs daemon..."
 
     $Process = Start-Process `
@@ -473,6 +503,8 @@ function Stop-EmacsDaemon {
         )
     }
 
+    Invoke-EnsureCackledaemonWD
+
     Write-CackledaemonLog "Stopping the Emacs daemon..."
 
     Stop-Process -InputObject $Process
@@ -499,7 +531,10 @@ Export-ModuleMember `
   -Function @(
       'Invoke-EnsureCackledaemonWD',
       'Write-CackledaemonLog',
+      'Get-CackledaemonLogRotateJob',
       'Start-CackledaemonLogRotateJob',
+      'Stop-CackledaemonLogRotateJob',
+      'Remove-CackledaemonLogRotateJob',
       'Start-EmacsDaemon',
       'Stop-EmacsDaemon',
       'Restart-EmacsDaemon',
