@@ -1,4 +1,4 @@
-#+TITLE: Cackledaemon
+#+TITLE: Cackledaemon - An Emacs Daemon Manager for Windows
 
 #+BEGIN_QUOTE
 Oh-ho-ho! Swirly Photoshop magic! I bet this thing could release some serious
@@ -7,10 +7,67 @@ cackledemons!
 -- Strong Bad
 #+END_QUOTE
 
+* What is Cackledaemon and Why Do I Want It?
+Anyone who has used a fully configured [[https://www.gnu.org/software/emacs/][Emacs]] install such as [[https://www.spacemacs.org/][Spacemacs]] or [[https://github.com/hlissner/doom-emacs][Doom]]
+knows that Emacs can take a long time to initially boot. This isn't for a lack
+of trying - in fact, the source code for Doom is half speed hacks and I highly
+encourage anybody hacking on Emacs to take a look.
 
-https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-write-a-powershell-script-module?view=powershell-7
+The truth is that Emacs is less a code editor and more of a *framework* for
+*writing text-based applications*. I like to compare it to [[https://nodejs.org][Node.js]] in this
+regard, which, while really good at being a webserver is no [[https://www.nginx.com/][NGINX]], but instead a
+runtime where you can import lots of tiny pieces of functionality a la carte to
+make your own webserver. Any one of these configurations does exactly this - it
+installs packages from the internet, requires them and uses [[https://www.gnu.org/software/emacs/manual/html_node/eintr/][Emacs Lisp]] to create
+a complete application. Spacemacs and Doom are built similarly, but feel
+different because they *are* in fact meaningfully different.
 
-* Licensing
+Just as you don't want to load the JavaScript runtime for every request (this is
+how non-Node webservers [[https://en.wikipedia.org/wiki/Common_Gateway_Interface][used to do in the olden days]] and trust me it was not
+very good) you don't really want to load all of Emacs every time you open a file
+either. It's less than ideal.
+
+Luckily for us, Emacs can be ran [[https://www.emacswiki.org/emacs/EmacsAsDaemon][as a daemon]] and connected to via a client,
+typically ~emacsclient~. In Linux and [[https://www.freedesktop.org/wiki/Software/systemd/][systemd]] this works seamlessly - often you
+can run =systemctl start --user emacs= and be off to the races. In OSX it's only
+a little harder - you [[https://www.emacswiki.org/emacs/EmacsAsDaemon#toc8][copy-paste a plist file from the wiki]], pull some very
+minor shenanigans and have a mostly working daemon.
+
+In Windows it's a bit more of a mess. This is because the Windows abstractions
+for processes and services are wildly divergent from those in nix-like
+environments such as Linux and OSX. Init systems like systemd run and manage
+normal process, meanwhile in Windows services are in fact [[https://docs.microsoft.com/en-us/dotnet/framework/windows-services/walkthrough-creating-a-windows-service-application-in-the-component-designer][special programs]] that
+[[https://docs.microsoft.com/en-us/dotnet/api/system.serviceprocess?view=netframework-4.8][expose an alternate interface]] to that of the standard process. The upshot is
+that any standard process that one wants to run as a Windows service needs to be
+wrapped in one of these special programs, complete with bespoke abstractions for
+process management, log management and so on.
+
+Alternately, arbitrary processes may be [[https://support.microsoft.com/en-us/help/4026268/windows-10-change-startup-apps][configured to start on user login]].
+Practically speaking, this is how most persistent applications are ran in
+Windows, and in fact the [[https://www.emacswiki.org/emacs/EmacsMsWindowsIntegration#toc8][approach documented in the wiki]] does exactly this - it
+uses a Powershell script to generate a very simple [[https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/windows-commands][batch file]] that cleans up
+server state from the prior run and then spawns the Emacs daemon.
+
+This works OK. However, there are some downsides. If the Emacs daemon crashes
+for any reason, there's no signal other than ~emacsclient~ mysteriously not
+working; any logs that come out of the Emacs daemon are lost to the aether; and
+straightforward lifecycle actions that can be done casually with systemd (start,
+top, restart, status) are very non-ergonomic.
+
+Luckily, [[https://docs.microsoft.com/en-us/powershell/scripting/overview][PowerShell]] has our back. PowerShell is a shockingly good language - it
+performs admirably as a shell and yet scales to general purpose use, even being
+capable of making proper [[https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_classes][.NET classes]]. More to the point, it's very good at
+[[https://docs.microsoft.com/en-us/powershell/scripting/samples/managing-processes-with-process-cmdlets][managing processes]] and has [[https://docs.microsoft.com/en-us/powershell/scripting/developer/cmdlet/background-jobs][special support for background jobs]], as well as being
+able to [[https://docs.microsoft.com/en-us/dotnet/api/system.windows.forms.notifyicon][instantiate and manage tray icons]] via [[https://docs.microsoft.com/en-us/dotnet/framework/winforms/][Windows Forms]]. All it needs is a
+little elbow grease!
+
+Cackledaemon is a PowerShell module that intends to be a solution for managing
+such an instance of the Emacs daemon for Windows. It includes functions for
+starting, stopping and restarting the Emacs daemon, functions and jobs for log
+management and rotation, and a tray icon for a lil' point-and-click action and
+notifications for if/when Emacs crashed.
+
+* Cackledaemon is Free Software
 Cackledaemon is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
@@ -210,7 +267,7 @@ function Invoke-EnsureCackledaemonWD {
 #+END_SRC
 
 * Logging
-** Configuration Parameters
+** Settings
 These are the settings for log location and rotation.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
@@ -381,6 +438,9 @@ $Notify.Show()
 
 #+END_SRC
 * Daemon Management
+
+Need to be able to configure the server file, since the defaults break w/ chemacs
+https://www.gnu.org/software/emacs/manual/html_node/emacs/TCP-Emacs-server.html
 
 https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.management/start-process?view=powershell-7
 https://mcpmag.com/articles/2017/09/07/creating-a-balloon-tip-notification-using-powershell.aspx
