@@ -84,9 +84,9 @@ task Publish {
 https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-write-a-powershell-module-manifest?view=powershell-7
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psd1
 @{
-    RootModule = './Cackledaemon/Cackledaemon.psm1'
+    RootModule = 'Cackledaemon.psm1'
 
-    ModuleVersion = '0.0.3'
+    ModuleVersion = '0.0.8'
     GUID = '10d14360-ee5c-4363-bfe8-f4116a8ce764'
 
     Author = 'Josh Holbrook'
@@ -242,9 +242,11 @@ will do this every configured amount of seconds indefinitely.
 function Start-CackledaemonLogRotateJob {
     Start-Job `
     -Name 'CackledaemonLogRotateJob' `
-    -WorkingDirectory $CackledaemonWD `
-    -ScriptBlock {
+    -InitializationScript {
         Import-Module Cackledaemon
+    }
+    -ScriptBlock {
+        Set-Location $CackledaemonWD
 
         Write-CackledaemonLog "{0} {1}" -f (Get-Item $CackledaemonLogFile).Length, $CackledaemonLogSize
 
