@@ -1,4 +1,11 @@
-#+TITLE: cackledaemon
+#+TITLE: Cackledaemon
+
+#+BEGIN_QUOTE
+Oh-ho-ho! Swirly Photoshop magic! I bet this thing could release some serious
+cackledemons!
+
+-- Strong Bad
+#+END_QUOTE
 
 
 https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-write-a-powershell-script-module?view=powershell-7
@@ -17,7 +24,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with Cackledaemon.  If not, see <https://www.gnu.org/licenses/>.
 
-#+BEGIN_SRC powershell :tangle ./dist/Cackledaemon.psd1
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psd1
 # Copyright 2020 Josh Holbrook
 #
 # This file is part of Cackledaemon.
@@ -37,80 +44,124 @@ along with Cackledaemon.  If not, see <https://www.gnu.org/licenses/>.
 
 
 #+END_SRC
-* TODO Tasks
-https://github.com/DTW-DanWard/PowerShell-Beautifier/blob/master/PowerShell-Beautifier.psd1
+* Tasks
+Cackledaemon can be built and published using [[https://github.com/nightroman/Invoke-Build][Invoke-Build]].
+** Building Cackledaemon
+=Invoke-Build= will call Emacs in batch mode to build this project using
+~org-babel~. Alternately, you may type ~C-c C-v t~ with this file open in Emacs.
 
-Tangling, README generation and so on
+#+BEGIN_SRC emacs-lisp :tangle tangle.el
+(progn
+  (require 'ob-tangle)
+  (message "Tangling...")
+  (with-current-buffer (find-file-noselect "cackledaemon.org")
+    (org-babel-tangle))
+  (message "Done."))
+#+END_SRC
 
-Powershell has frameworks for make-like task management, I should get down
-* TODO Manifest
-https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-write-a-powershell-module-manifest?view=powershell-7
-#+BEGIN_SRC powershell :tangle ./dist/Cackledaemon.psd1
-@{
+#+BEGIN_SRC powershell :tangle Cackledaemon.build.ps1
+task . Build
 
-RootModule = './dist/Cackledaemon.psm1'
-
-ModuleVersion = '1.0'
-GUID = '10d14360-ee5c-4363-bfe8-f4116a8ce764'
-
-Author = 'Josh Holbrook'
-Copyright = 'Copyright 2020 Josh Holbrook
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.'
-
-Description = ''
-
-# Modules that must be imported into the global environment prior to importing this module
-# RequiredModules = @()
-
-# Assemblies that must be loaded prior to importing this module
-RequiredAssemblies = @('System.Windows.Forms')
-
-# Script files (.ps1) that are run in the caller's environment prior to importing this module.
-# ScriptsToProcess = @()
-
-# Modules to import as nested modules of the module specified in RootModule/ModuleToProcess
-# NestedModules = @()
-
-FunctionsToExport = @()
-CmdletsToExport = @()
-VariablesToExport = '*'
-AliasesToExport = @()
-
-# List of all files packaged with this module
-# FileList = @()
-
-PrivateData = @{
-    PSData = @{
-        Tags = @('emacs')
-        LicenseUri = 'https://github.com/jfhbrook/cackledaemon/blob/master/COPYING'
-        ProjectUri = 'https://github.com/jfhbrook/cackledaemon'
-
-        # A URL to an icon representing this module.
-        # IconUri = ''
-
-        # ReleaseNotes of this module
-        # ReleaseNotes = ''
-    }
+task Build {
+    emacs.exe --batch --load tangle.el
 }
 
-# HelpInfo URI of this module
-# https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-create-a-helpinfo-xml-file?view=powershell-7
-# HelpInfoURI = ''
+#+END_SRC
+** Publishing Cackledaemon
+This project can be published on the Powershell Gallery by running
+=Invoke-Build Publish.= In order for it to succeed, there must be a
+[[.\Secrets.ps1]] file that defines ==$PowershellGalleryAPIKey= as a valid
+Powershell Gallery NuGet API key. This file gets sourced by the ~Publish~ task.
 
-# Default prefix for commands exported from this module. Override the default prefix using Import-Module -Prefix.
-# DefaultCommandPrefix = ''
+#+BEGIN_SRC powershell :tangle Cackledaemon.build.ps1
+task Publish {
+    . .\Secrets.ps1
+     Publish-Module -Path .\Cackledaemon\ -NuGetApiKey $PowershellGalleryAPIKey
+}
+#+END_SRC
+
+* Manifest
+https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-write-a-powershell-module-manifest?view=powershell-7
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psd1
+@{
+    RootModule = './Cackledaemon/Cackledaemon.psm1'
+
+    ModuleVersion = '0.0.3'
+    GUID = '10d14360-ee5c-4363-bfe8-f4116a8ce764'
+
+    Author = 'Josh Holbrook'
+    Copyright = 'Copyright 2020 Josh Holbrook.
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.'
+
+    Description = 'An opinionated framework for managing the Emacs daemon in Windows'
+
+    # Modules that must be imported into the global environment prior to importing this module
+    # RequiredModules = @()
+
+    # Assemblies that must be loaded prior to importing this module
+    RequiredAssemblies = @('System.Windows.Forms')
+
+    # Script files (.ps1) that are run in the caller's environment prior to importing this module.
+    # ScriptsToProcess = @()
+
+    # Modules to import as nested modules of the module specified in RootModule/ModuleToProcess
+    # NestedModules = @()
+
+    FunctionsToExport = @(
+        'Ensure-CackledaemonWD'
+        'Write-CackledaemonLog'
+        'Start-CackledaemonLogRotateJob'
+        'Start-EmacsDaemon'
+        'Stop-EmacsDaemon'
+        'Restart-EmacsDaemon'
+    )
+
+    CmdletsToExport = @()
+    VariablesToExport = @(
+        '$CackledaemonWD'
+        '$CackledaemonLogFile'
+        '$CackledaemonLogSize'
+        '$CackledaemonLogRotate'
+        '$CackledaemonLogCheckTime'
+        '$CackledaemonProcessStateFile'
+    )
+    AliasesToExport = @()
+
+    FileList = @('Cackledaemon.psm1', 'Cackledaemon.psd1', 'COPYING')
+    ModuleList = @('.\Cackledaemon.psm1')
+
+    PrivateData = @{
+        PSData = @{
+            Tags = @('emacs')
+            LicenseUri = 'https://github.com/jfhbrook/cackledaemon/blob/master/COPYING'
+            ProjectUri = 'https://github.com/jfhbrook/cackledaemon'
+
+            # A URL to an icon representing this module.
+            # IconUri = ''
+
+            # ReleaseNotes of this module
+            # ReleaseNotes = ''
+        }
+    }
+
+    # HelpInfo URI of this module
+    # https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-create-a-helpinfo-xml-file?view=powershell-7
+    # HelpInfoURI = ''
+
+    # Default prefix for commands exported from this module. Override the default prefix using Import-Module -Prefix.
+    # DefaultCommandPrefix = ''
 
 }
 
@@ -119,7 +170,7 @@ PrivateData = @{
 Cackledaemon uses custom exceptions to signal states during lifecycle actions
 that it doesn't know how to handle.
 
-#+BEGIN_SRC powershell :tangle ./dist/Cackledaemon.psm1
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
 class CackledaemonException: System.Exception {
     CackledaemonException([string]$Message) : base($Message) {}
@@ -138,9 +189,9 @@ class CackledaemonNotRunningException: CackledaemonException {
 Cackledaemon needs a place to store logs and process metadata. For this purpose,
 we use a folder inside =APPDATA=.
 
-#+BEGIN_SRC powershell :tangle ./dist/Cackledaemon.psm1
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
-$CackledaemonWD = Join-Path $env:APPDATA "cackledaemon"
+$CackledaemonWD = Join-Path $env:APPDATA 'cackledaemon'
 
 function Ensure-CackledaemonWD {
     If (-not (Test-Path $CackledaemonWD)) {
@@ -154,12 +205,12 @@ function Ensure-CackledaemonWD {
 ** Configuration Parameters
 These are the settings for log location and rotation.
 
-#+BEGIN_SRC powershell :tangle ./dist/Cackledaemon.psm1
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
-$CackledaemonLogFile = Join-Path $CackledaemonWD "log.log"
-$CackledaemonLogSize = 1mb
+$CackledaemonLogFile = Join-Path $CackledaemonWD 'log.log'
+$CackledaemonLogSize = 16
 $CackledaemonLogRotate = 4
-$CackledaemonLogCheckTime = 60  # Seconds
+$CackledaemonLogCheckTime = 2  # Seconds
 
 #+END_SRC
 ** Logger
@@ -167,14 +218,14 @@ Cackledaemon's logger is dirt dirt simple. It doesn't have any log levels - it
 simply writes a message to the log file formatted with a greppable tag and a
 timestamp.
 
-#+BEGIN_SRC powershell :tangle ./dist/Cackledaemon.psm1
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
 function Write-CackledaemonLog {
     Param ([string]$Message)
 
     Ensure-CackledaemonWD
 
-    $Line = "[{0}] CACKLEDAEMON: {1}" -f (Get-Date -Format o) $Message
+    $Line = ('[{0}] CACKLEDAEMON: {1}' -f (Get-Date -Format o), $Message)
 
     Add-Content $CackledaemonLogFile -value $Line
 }
@@ -186,52 +237,52 @@ typical logrotate config - it rotates the log if it's at or over a certain size,
 retains some finite count of log files, and drops the last one if necessary. It
 will do this every configured amount of seconds indefinitely.
 
-#+BEGIN_SRC powershell :tangle ./dist/Cackledaemon.psm1
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
 function Start-CackledaemonLogRotateJob {
-    Start-Job
-    -Name 'CackledaemonLogRotateJob'
+    Start-Job `
+    -Name 'CackledaemonLogRotateJob' `
+    -WorkingDirectory $CackledaemonWD `
     -ScriptBlock {
-        Set-Location $CackledaemonWD
+        Import-Module Cackledaemon
+
+        Write-CackledaemonLog "{0} {1}" -f (Get-Item $CackledaemonLogFile).Length, $CackledaemonLogSize
 
         while ($true) {
-            If ((Get-Item $logFile).Length -ge $CackledaemonLogSize) {
-                Write-CackledaemonLog "Rotating logs..."
+            If ((Get-Item $CackledaemonLogFile).Length -ge $CackledaemonLogSize) {
+                Write-CackledaemonLog 'Rotating logs...'
 
                 ($CackledaemonLogRotate..0) | ForEach-Object {
-                    $Current = (
-                        Join-Path
-                        $CackledaemonWD
-                        $(If ($_) { "log.log.{0}" -f $_ } Else { "log.log" })
-                    )
-                    $Next = Join-Path $CackledaemonWD ("log.log{0} -f ($_ + 1)")
+                    $Current = Join-Path `
+                        $CackledaemonWD `
+                        $(If ($_) { 'log.log.{0}' -f $_ } Else { 'log.log' })
+
+                    $Next = Join-Path $CackledaemonWD ('log.log{0}' -f ($_ + 1))
 
                     If (Test-Path $Current) {
-                        Write-CackledaemonLog ("Copying {0} to {1}..." -f $Current $Next)
+                        Write-CackledaemonLog ('Copying {0} to {1}...' -f $Current, $Next)
 
                         Copy-Item -Path $Current -Destination $Next
                     }
                 }
 
-                Write-CackledaemonLog ("Truncating {0}..." -f $CackledaemonLogFile)
+                Write-CackledaemonLog ('Truncating {0}...' -f $CackledaemonLogFile)
 
                 Clear-Content $CackledaemonLogFile
 
-                $StaleLogFile = (
-                    Join-Path
-                    $CackledaemonWD
-                    ("log.log.{0}" -f ($CackledaemonLogRotate + 1))
-                )
+                $StaleLogFile = Join-Path `
+                  $CackledaemonWD `
+                  ('log.log.{0}' -f ($CackledaemonLogRotate + 1))
 
                 If (Test-Path $StaleLogFile) {
-                    Write-CackledaemonLog ("Removing {0}..." -f $StaleLogFile)
+                    Write-CackledaemonLog ('Removing {0}...' -f $StaleLogFile)
 
                     Remove-Item $StaleLogFile
                 }
 
-                Write-CackledaemonLog "Done."
+                Write-CackledaemonLog 'Done.'
             }
-
+            Write-CackledaemonLog 'All quiet on the Western front...'
             Start-Sleep -Seconds $CackledaemonLogCheckTime
         }
     }
@@ -247,11 +298,14 @@ It's currently broken because the example depends on clicking the icon that this
 creates in the systray, but I want to do the cleanup for when I merely close the
 notification. This will take more work and be an entire goat rope.
 
-#+BEGIN_SRC powershell :tangle notify.ps1
+#+BEGIN_SRC powershell
 
-Add-Type -AssemblyName System.Windows.Forms
+# It's actually appropriate for the icon to be global, because it's actually
+# 1:1 with the icon in the systray, not the notification itself. We should
+# instead refactor this to be a persisted global variable icon like in the
+# example article. It will probably not be necessary to wrap it in a class.
 
-class Notification : IDisposable {
+class NotificationManager : IDisposable {
     [System.Windows.Forms.NotifyIcon]$NotifyIcon
     [Int32]$Timeout
 
@@ -268,7 +322,7 @@ class Notification : IDisposable {
     InitializeIcon([string]$Hed, [string]$Dek) {
         $this.NotifyIcon = New-Object System.Windows.Forms.NotifyIcon
         $this.NotifyIcon.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon(
-            (Get-Command emacs.exe).Path
+            (Get-Command 'emacs.exe').Path
         )
         $this.NotifyIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
         $this.NotifyIcon.BalloonTipTitle = $Hed
@@ -294,13 +348,8 @@ class Notification : IDisposable {
 }
 
 $Notify = [Notification]::new("hed", "dek", 1000)
-Write-Host $Notify
 
 $Notify.Show()
-
-Start-Sleep 5
-
-Write-Host $Notify
 
 #+END_SRC
 * Daemon Management
@@ -315,17 +364,17 @@ In order to do basic monitoring of the Emacs daemon, we serialize the process
 object to and from a JSON file inside the working directory. We only need to
 save the ID, but storing the entire process object is easier.
 
-#+BEGIN_SRC powershell :tangle ./dist/Cackledaemon.psm1
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
 $CackledaemonProcessStateFile = Join-Path $CackledaemonWD "DaemonProcessState.json"
 
-function Store-ProcessState {
+function Write-ProcessState {
     param([System.Diagnostics.Process]$Process)
 
     $Process | ConvertTo-Json | Out-File $CackledaemonProcessStateFile
 }
 
-function Retrieve-ProcessState {
+function Get-ProcessState {
     $Id = (Get-Content $CackledaemonProcessStateFile | ConvertFrom-Json).Id
 
     If (-not $Id) {
@@ -340,15 +389,6 @@ function Retrieve-ProcessState {
 It would probably be bad to try to start an Emacs daemon if one is already
 running.
 
-When an Emacs daemon is already running, we should throw an exception.
-
-#+BEGIN_SRC powershell :tangle ./dist/Cackledaemon.psm1
-
-#+END_SRC
-
-
-Trying to start a second daemon if one is already running is a bad idea.
-
 If an Emacs daemon is being managed, then retrieving the process state should be
 successful and we can simply check to make sure that =Retrieve-ProcessState=
 returns a non-=$null= value. However, it's also possible to start the Emacs
@@ -358,22 +398,21 @@ any of them have ~--daemon~ in their command line args. We intentionally punt on
 the edge case of searching for emacs instances *not* started with the ~--daemon~
 but which have called =(run-server)=.
 
-#+BEGIN_SRC powershell :tangle ./dist/Cackledaemon.psm1
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
-function Find-UnmanagedEmacsDaemons () {
-    return (
-        Get-CimInstance
-        -Query "
-            SELECT
-              *
-            FROM Win32_Process
-            WHERE
-              Name = 'emacs.exe' OR Name = 'runemacs.exe'"
-    ) | Where-Object {
+function Get-UnmanagedEmacsDaemons () {
+    $ManagedProcess = $(Retrieve-ProcessState)
+    return Get-CimInstance -Query "
+        SELECT
+          ,*
+        FROM Win32_Process
+        WHERE
+          Name = 'emacs.exe' OR Name = 'runemacs.exe'
+    " | Where-Object {
         $_.CommandLine.Contains("--daemon")
     } | ForEach-Object {
         Get-Process -Id ($_.ProcessId)
-    }
+    } | Where-Object { -not ($_.Id -eq $ManagedProcess.Id) }
 }
 
 #+END_SRC
@@ -381,10 +420,10 @@ function Find-UnmanagedEmacsDaemons () {
 This function launches the Emacs daemon (if it's not running already) with
 sensible parameters and stores process info so we can do basic monitoring.
 
-#+BEGIN_SRC powershell :tangle ./dist/Cackledaemon.psm1
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
 function Start-EmacsDaemon {
-    $Process = Retrieve-ProcessState
+    $Process = $(Get-ProcessState)
 
     If ($Process) {
         Throw [CackledaemonAlreadyRunningException]::new(
@@ -392,7 +431,7 @@ function Start-EmacsDaemon {
         )
     }
 
-    If ($(Find-UnmanagedEmacsDaemons)) {
+    If ($(Get-UnmanagedEmacsDaemons)) {
         Throw [CackledaemonAlreadyRunningException]::new(
             "The Emacs daemon has already been started by someone else and " +
             "is not being managed!"
@@ -401,17 +440,17 @@ function Start-EmacsDaemon {
 
     Write-CackledaemonLog "Starting the Emacs daemon..."
 
-    $Process = Start-Process
-    -FilePath "emacs.exe"
-    -ArgumentList "--daemon"
-    -NoNewWindow
-    -RedirectStandardOut $logFile
-    -RedirectStandardError $logFile
-    -PassThru
+    $Process = Start-Process `
+      -FilePath "emacs.exe" `
+      -ArgumentList "--daemon" `
+      -NoNewWindow `
+      -RedirectStandardOut $logFile `
+      -RedirectStandardError $logFile `
+      -PassThru
 
     Write-CackledaemonLog "Saving the Emacs daemon's process state..."
 
-    Store-ProcessState -Process $Process
+    Write-ProcessState -Process $Process
 
     Write-CackledaemonLog "Done."
 
@@ -423,7 +462,7 @@ function Start-EmacsDaemon {
 Stopping the process is simply a matter of retrieving the process state from
 disk and attempting to stop the process.
 
-#+BEGIN_SRC powershell :tangle ./dist/Cackledaemon.psm1
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
 function Stop-EmacsDaemon {
     $Process = Retrieve-ProcessState
@@ -447,10 +486,33 @@ function Stop-EmacsDaemon {
 ** Restart the Emacs Daemon
 From here, restarting is easy - first stop the process, then start it again.
 
-#+BEGIN_SRC powershell :tangle ./dist/Cackledaemon.psm1
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
 function Restart-EmacsDaemon {
     Stop-EmacsDaemon
     Start-EmacsDaemon
 }
+#+END_SRC
+* Exports
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+Export-ModuleMember `
+  -Function @(
+      'Ensure-CackledaemonWD',
+      'Write-CackledaemonLog',
+      'Start-CackledaemonLogRotateJob',
+      'Start-EmacsDaemon',
+      'Stop-EmacsDaemon',
+      'Restart-EmacsDaemon',
+      'Write-ProcessState',
+      'Get-ProcessState',
+      'Get-UnmanagedEmacsDaemons'
+  ) `
+  -Variable @(
+      'CackledaemonWD',
+      'CackledaemonLogFile',
+      'CackledaemonLogSize',
+      'CackledaemonLogRotate',
+      'CackledaemonLogCheckTime',
+      'CackledaemonProcessStateFile'
+  )
 #+END_SRC
