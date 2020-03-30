@@ -74,7 +74,7 @@ This project can be published on the Powershell Gallery by running
 Powershell Gallery NuGet API key. This file gets sourced by the ~Publish~ task.
 
 #+BEGIN_SRC powershell :tangle Cackledaemon.build.ps1
-task Publish {
+task Publish Build, {
     . .\Secrets.ps1
      Publish-Module -Path .\Cackledaemon\ -NuGetApiKey $PowershellGalleryAPIKey
 }
@@ -86,7 +86,7 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
 @{
     RootModule = 'Cackledaemon.psm1'
 
-    ModuleVersion = '0.0.8'
+    ModuleVersion = '0.0.12'
     GUID = '10d14360-ee5c-4363-bfe8-f4116a8ce764'
 
     Author = 'Josh Holbrook'
@@ -120,7 +120,7 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
     # NestedModules = @()
 
     FunctionsToExport = @(
-        'Ensure-CackledaemonWD'
+        'Invoke-EnsureCackledaemonWD'
         'Write-CackledaemonLog'
         'Start-CackledaemonLogRotateJob'
         'Start-EmacsDaemon'
@@ -130,12 +130,12 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
 
     CmdletsToExport = @()
     VariablesToExport = @(
-        '$CackledaemonWD'
-        '$CackledaemonLogFile'
-        '$CackledaemonLogSize'
-        '$CackledaemonLogRotate'
-        '$CackledaemonLogCheckTime'
-        '$CackledaemonProcessStateFile'
+        'CackledaemonWD'
+        'CackledaemonLogFile'
+        'CackledaemonLogSize'
+        'CackledaemonLogRotate'
+        'CackledaemonLogCheckTime'
+        'CackledaemonProcessStateFile'
     )
     AliasesToExport = @()
 
@@ -193,7 +193,7 @@ we use a folder inside =APPDATA=.
 
 $CackledaemonWD = Join-Path $env:APPDATA 'cackledaemon'
 
-function Ensure-CackledaemonWD {
+function Invoke-EnsureCackledaemonWD {
     If (-not (Test-Path $CackledaemonWD)) {
         New-Item -Path $CackledaemonWD -ItemType directory
     }
@@ -208,7 +208,7 @@ These are the settings for log location and rotation.
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
 $CackledaemonLogFile = Join-Path $CackledaemonWD 'log.log'
-$CackledaemonLogSize = 16
+$CackledaemonLogSize = 1mb
 $CackledaemonLogRotate = 4
 $CackledaemonLogCheckTime = 2  # Seconds
 
@@ -223,7 +223,7 @@ timestamp.
 function Write-CackledaemonLog {
     Param ([string]$Message)
 
-    Ensure-CackledaemonWD
+    Invoke-EnsureCackledaemonWD
 
     $Line = ('[{0}] CACKLEDAEMON: {1}' -f (Get-Date -Format o), $Message)
 
@@ -244,11 +244,9 @@ function Start-CackledaemonLogRotateJob {
     -Name 'CackledaemonLogRotateJob' `
     -InitializationScript {
         Import-Module Cackledaemon
-    }
+    } `
     -ScriptBlock {
         Set-Location $CackledaemonWD
-
-        Write-CackledaemonLog "{0} {1}" -f (Get-Item $CackledaemonLogFile).Length, $CackledaemonLogSize
 
         while ($true) {
             If ((Get-Item $CackledaemonLogFile).Length -ge $CackledaemonLogSize) {
@@ -259,7 +257,7 @@ function Start-CackledaemonLogRotateJob {
                         $CackledaemonWD `
                         $(If ($_) { 'log.log.{0}' -f $_ } Else { 'log.log' })
 
-                    $Next = Join-Path $CackledaemonWD ('log.log{0}' -f ($_ + 1))
+                    $Next = Join-Path $CackledaemonWD ('log.log.{0}' -f ($_ + 1))
 
                     If (Test-Path $Current) {
                         Write-CackledaemonLog ('Copying {0} to {1}...' -f $Current, $Next)
@@ -499,7 +497,7 @@ function Restart-EmacsDaemon {
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 Export-ModuleMember `
   -Function @(
-      'Ensure-CackledaemonWD',
+      'Invoke-EnsureCackledaemonWD',
       'Write-CackledaemonLog',
       'Start-CackledaemonLogRotateJob',
       'Start-EmacsDaemon',
