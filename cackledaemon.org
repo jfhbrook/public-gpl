@@ -130,9 +130,9 @@ These are the settings for log location and rotation.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
-$CackledaemonLogFile = Join-Path $CackledaemonWD 'cackledaemon.log'
-$EmacsStdOutLogFile = Join-Path $CackledaemonWD 'emacs-stdout.log'
-$EmacsStdErrLogFile = Join-Path $CackledaemonWD 'emacs-stderr.log'
+$CackledaemonLogFile = Join-Path $CackledaemonWD 'Cackledaemon.log'
+$EmacsStdOutLogFile = Join-Path $CackledaemonWD 'EmacsStdout.log'
+$EmacsStdErrLogFile = Join-Path $CackledaemonWD 'EmacsStderr.log'
 $LogSize = 1mb
 $LogRotate = 4
 $LogCheckTime = 2  # Seconds
@@ -165,7 +165,7 @@ will do this every configured amount of seconds indefinitely.
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
 function Get-CackledaemonLogRotateJob {
-    Get-Job -Name 'CackledaemonLogRotateJob'
+    Get-Job -Name 'CackledaemonLogRotateJob' -ErrorAction SilentlyContinue
 }
 
 function Start-CackledaemonLogRotateJob {
@@ -210,9 +210,7 @@ function Start-CackledaemonLogRotateJob {
 
                     Clear-Content $LogFile
 
-                    $StaleLogFile = Join-Path `
-                    $CackledaemonWD `
-                    ('log.log.{0}' -f ($LogRotate + 1))
+                    $StaleLogFile = '{0}.{1}' -f ($LogRotate + 1)
 
                     If (Test-Path $StaleLogFile) {
                         Write-CackledaemonLog ('Removing {0}...' -f $StaleLogFile)
@@ -318,27 +316,27 @@ save the ID, but storing the entire process object is easier.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
-$CackledaemonPidFile = Join-Path $CackledaemonWD "DaemonPidFile.json"
+PidFile = Join-Path $CackledaemonWD 'DaemonPidFile.json'
 
 function Write-EmacsProcessToPidFile {
     param([System.Diagnostics.Process]$Process)
 
-    ($Process).Id | ConvertTo-Json | Out-File $CackledaemonPidFile
+    ($Process).Id | ConvertTo-Json | Out-File PidFile
 }
 
 function Get-EmacsProcessFromPidFile {
-    If (-not (Test-Path $CackledaemonPidFile)) {
+    If (-not (Test-Path PidFile)) {
         return $null
     }
 
-    $Id = (Get-Content $CackledaemonPidFile | ConvertFrom-Json)
+    $Id = (Get-Content PidFile | ConvertFrom-Json)
 
     If (-not $Id) {
-        Remove-Item $CackledaemonPidFile
+        Remove-Item PidFile
         return $null
     }
 
-    return Get-Process -Id $Id
+    return Get-Process -Id $Id -ErrorAction SilentlyContinue
 }
 
 #+END_SRC
