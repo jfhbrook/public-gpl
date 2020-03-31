@@ -1,16 +1,16 @@
 
 # Table of Contents
 
-1.  [Introduction](#org4742262)
-2.  [Cackledaemon is Free Software](#org10e9303)
-3.  [Development Tasks](#orgb637808)
-    1.  [Building Cackledaemon](#org5c4ebc5)
-    2.  [Publishing Cackledaemon](#org448dd74)
+1.  [Cackledaemon](#org014b3fd)
+2.  [Development Tasks](#orga549ef9)
+    1.  [Building Cackledaemon](#org949092b)
+    2.  [Publishing Cackledaemon](#org3ac1ee1)
+3.  [License](#orgcfb4619)
 
 
-<a id="org4742262"></a>
+<a id="org014b3fd"></a>
 
-# Introduction
+# Cackledaemon
 
 > Oh-ho-ho! Swirly Photoshop magic! I bet this thing could release some serious
 > cackledemons!
@@ -77,22 +77,65 @@ management and rotation, and a tray icon for a lil' point-and-click action and
 notifications for if/when Emacs exits unexpectedly.
 
 
-<a id="org10e9303"></a>
+<a id="orga549ef9"></a>
 
-# Cackledaemon is Free Software
+# Development Tasks
 
-Cackledaemon is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+Cackledaemon can be built and published using [Invoke-Build](https://github.com/nightroman/Invoke-Build).
 
-Cackledaemon is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
 
-You should have received a copy of the GNU General Public License
-along with Cackledaemon.  If not, see <https://www.gnu.org/licenses/>.
+<a id="org949092b"></a>
+
+## Building Cackledaemon
+
+`Invoke-Build` will call Emacs in batch mode to build this project using
+`org-babel`. Alternately, you may type `C-c C-v t` with this file open in Emacs.
+
+This emacs batch script tangles `cackledaemon.org` and generates the `README.md`:
+
+    (progn
+      (require 'org)
+      (require 'ob-tangle)
+      (require 'ox-md)
+    
+      (with-current-buffer (find-file-noselect "cackledaemon.org")
+        (message "Tangling Code...")
+        (org-babel-tangle)
+        (message "Generating README...")
+        (org-export-to-file 'md "README.md"))
+      (message "Done."))
+
+`Invoke-Build` wraps this in a task which shells out to Emacs:
+
+    task . Build
+    
+    task Build {
+        emacs.exe --batch --load build.el
+        Remove-Item README.md~
+    }
+
+
+<a id="org3ac1ee1"></a>
+
+## Publishing Cackledaemon
+
+This project can be published on the Powershell Gallery by running
+`Invoke-Build Publish.` In order for it to succeed, there must be a
+`.\Secrets.ps1` file that defines `$PowershellGalleryAPIKey` as a valid
+Powershell Gallery NuGet API key. This file gets sourced by the `Publish` task.
+
+    task Publish Build, {
+        . .\Secrets.ps1
+         Publish-Module -Path .\Cackledaemon\ -NuGetApiKey $PowershellGalleryAPIKey
+    }
+
+
+<a id="orgcfb4619"></a>
+
+# License
+
+Cackledaemon, much like Emacs, is licensed under the terms of the GPL v3 or
+newer.
 
     # Copyright 2020 Josh Holbrook
     #
@@ -110,56 +153,4 @@ along with Cackledaemon.  If not, see <https://www.gnu.org/licenses/>.
     #
     # You should have received a copy of the GNU General Public License
     # along with Cackledaemon.  If not, see <https://www.gnu.org/licenses/>.
-
-
-<a id="orgb637808"></a>
-
-# Development Tasks
-
-Cackledaemon can be built and published using [Invoke-Build](https://github.com/nightroman/Invoke-Build).
-
-
-<a id="org5c4ebc5"></a>
-
-## Building Cackledaemon
-
-`Invoke-Build` will call Emacs in batch mode to build this project using
-`org-babel`. Alternately, you may type `C-c C-v t` with this file open in Emacs.
-
-This emacs batch script tangles `cackledaemon.org` and generates the `README.md`:
-
-    (progn
-      (require 'org)
-      (require 'ob-tangle)
-      (require 'ox-md)
-    
-      (with-current-buffer (find-file-noselect "cackledaemon.org")
-        (message "Tangling...")
-        (org-babel-tangle)
-        (message "Generating README...")
-        (org-export-to-file 'md "README.md"))
-      (message "Done."))
-
-`Invoke-Build` wraps this in a task which shells out to emacs:
-
-    task . Build
-    
-    task Build {
-        emacs.exe --batch --load tangle.el
-    }
-
-
-<a id="org448dd74"></a>
-
-## Publishing Cackledaemon
-
-This project can be published on the Powershell Gallery by running
-`Invoke-Build Publish.` In order for it to succeed, there must be a
-`.\Secrets.ps1` file that defines `$PowershellGalleryAPIKey` as a valid
-Powershell Gallery NuGet API key. This file gets sourced by the `Publish` task.
-
-    task Publish Build, {
-        . .\Secrets.ps1
-         Publish-Module -Path .\Cackledaemon\ -NuGetApiKey $PowershellGalleryAPIKey
-    }
 

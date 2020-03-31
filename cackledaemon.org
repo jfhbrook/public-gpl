@@ -2,7 +2,7 @@
 #+AUTHOR: Josh Holbrook
 #+OPTIONS: tags:nil
 
-* Introduction :export:
+* Cackledaemon :export:
 #+BEGIN_QUOTE
 Oh-ho-ho! Swirly Photoshop magic! I bet this thing could release some serious
 cackledemons!
@@ -69,171 +69,6 @@ starting, stopping and restarting the Emacs daemon, functions and jobs for log
 management and rotation, and a tray icon for a lil' point-and-click action and
 notifications for if/when Emacs exits unexpectedly.
 
-* Cackledaemon is Free Software :export:
-Cackledaemon is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Cackledaemon is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Cackledaemon.  If not, see <https://www.gnu.org/licenses/>.
-
-#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psd1
-# Copyright 2020 Josh Holbrook
-#
-# This file is part of Cackledaemon.
-#
-# Cackledaemon is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# Cackledaemon is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with Cackledaemon.  If not, see <https://www.gnu.org/licenses/>.
-
-
-#+END_SRC
-* Development Tasks :export:
-Cackledaemon can be built and published using [[https://github.com/nightroman/Invoke-Build][Invoke-Build]].
-** Building Cackledaemon
-=Invoke-Build= will call Emacs in batch mode to build this project using
-~org-babel~. Alternately, you may type ~C-c C-v t~ with this file open in Emacs.
-
-This emacs batch script tangles ~cackledaemon.org~ and generates the ~README.md~:
-
-#+BEGIN_SRC emacs-lisp :tangle tangle.el
-(progn
-  (require 'org)
-  (require 'ob-tangle)
-  (require 'ox-md)
- 
-  (with-current-buffer (find-file-noselect "cackledaemon.org")
-    (message "Tangling...")
-    (org-babel-tangle)
-    (message "Generating README...")
-    (org-export-to-file 'md "README.md"))
-  (message "Done."))
-#+END_SRC
-
-=Invoke-Build= wraps this in a task which shells out to emacs:
-
-#+BEGIN_SRC powershell :tangle Cackledaemon.build.ps1
-task . Build
-
-task Build {
-    emacs.exe --batch --load tangle.el
-}
-
-#+END_SRC
-** Publishing Cackledaemon
-This project can be published on the Powershell Gallery by running
-=Invoke-Build Publish.= In order for it to succeed, there must be a
-=.\Secrets.ps1= file that defines =$PowershellGalleryAPIKey= as a valid
-Powershell Gallery NuGet API key. This file gets sourced by the ~Publish~ task.
-
-#+BEGIN_SRC powershell :tangle Cackledaemon.build.ps1
-task Publish Build, {
-    . .\Secrets.ps1
-     Publish-Module -Path .\Cackledaemon\ -NuGetApiKey $PowershellGalleryAPIKey
-}
-#+END_SRC
-
-* Manifest
-https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-write-a-powershell-module-manifest?view=powershell-7
-#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psd1
-@{
-    RootModule = 'Cackledaemon.psm1'
-
-    ModuleVersion = '0.0.12'
-    GUID = '10d14360-ee5c-4363-bfe8-f4116a8ce764'
-
-    Author = 'Josh Holbrook'
-    Copyright = 'Copyright 2020 Josh Holbrook.
-
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.'
-
-    Description = 'An opinionated framework for managing the Emacs daemon in Windows'
-
-    # Modules that must be imported into the global environment prior to importing this module
-    # RequiredModules = @()
-
-    # Assemblies that must be loaded prior to importing this module
-    RequiredAssemblies = @('System.Windows.Forms')
-
-    # Script files (.ps1) that are run in the caller's environment prior to importing this module.
-    # ScriptsToProcess = @()
-
-    # Modules to import as nested modules of the module specified in RootModule/ModuleToProcess
-    # NestedModules = @()
-
-    FunctionsToExport = @(
-        'Invoke-EnsureCackledaemonWD'
-        'Write-CackledaemonLog'
-        'Start-CackledaemonLogRotateJob'
-        'Start-EmacsDaemon'
-        'Stop-EmacsDaemon'
-        'Restart-EmacsDaemon'
-    )
-
-    CmdletsToExport = @()
-    VariablesToExport = @(
-        'CackledaemonWD'
-        'CackledaemonLogFile'
-        'CackledaemonLogSize'
-        'CackledaemonLogRotate'
-        'CackledaemonLogCheckTime'
-        'CackledaemonProcessStateFile'
-    )
-    AliasesToExport = @()
-
-    FileList = @('Cackledaemon.psm1', 'Cackledaemon.psd1', 'COPYING')
-    ModuleList = @('.\Cackledaemon.psm1')
-
-    PrivateData = @{
-        PSData = @{
-            Tags = @('emacs')
-            LicenseUri = 'https://github.com/jfhbrook/cackledaemon/blob/master/COPYING'
-            ProjectUri = 'https://github.com/jfhbrook/cackledaemon'
-
-            # A URL to an icon representing this module.
-            # IconUri = ''
-
-            # ReleaseNotes of this module
-            # ReleaseNotes = ''
-        }
-    }
-
-    # HelpInfo URI of this module
-    # https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-create-a-helpinfo-xml-file?view=powershell-7
-    # HelpInfoURI = ''
-
-    # Default prefix for commands exported from this module. Override the default prefix using Import-Module -Prefix.
-    # DefaultCommandPrefix = ''
-
-}
-
-#+END_SRC
 * Exceptions
 Cackledaemon uses custom exceptions to signal states during lifecycle actions
 that it doesn't know how to handle.
@@ -621,4 +456,159 @@ Export-ModuleMember `
       'CackledaemonLogCheckTime',
       'CackledaemonProcessStateFile'
   )
+#+END_SRC
+* Manifest
+https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-write-a-powershell-module-manifest?view=powershell-7
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psd1
+@{
+    RootModule = 'Cackledaemon.psm1'
+
+    ModuleVersion = '0.0.12'
+    GUID = '10d14360-ee5c-4363-bfe8-f4116a8ce764'
+
+    Author = 'Josh Holbrook'
+    Copyright = 'Copyright 2020 Josh Holbrook.
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.'
+
+    Description = 'An opinionated framework for managing the Emacs daemon in Windows'
+
+    # Modules that must be imported into the global environment prior to importing this module
+    # RequiredModules = @()
+
+    # Assemblies that must be loaded prior to importing this module
+    RequiredAssemblies = @('System.Windows.Forms')
+
+    # Script files (.ps1) that are run in the caller's environment prior to importing this module.
+    # ScriptsToProcess = @()
+
+    # Modules to import as nested modules of the module specified in RootModule/ModuleToProcess
+    # NestedModules = @()
+
+    FunctionsToExport = @(
+        'Invoke-EnsureCackledaemonWD'
+        'Write-CackledaemonLog'
+        'Start-CackledaemonLogRotateJob'
+        'Start-EmacsDaemon'
+        'Stop-EmacsDaemon'
+        'Restart-EmacsDaemon'
+    )
+
+    CmdletsToExport = @()
+    VariablesToExport = @(
+        'CackledaemonWD'
+        'CackledaemonLogFile'
+        'CackledaemonLogSize'
+        'CackledaemonLogRotate'
+        'CackledaemonLogCheckTime'
+        'CackledaemonProcessStateFile'
+    )
+    AliasesToExport = @()
+
+    FileList = @('Cackledaemon.psm1', 'Cackledaemon.psd1', 'COPYING')
+    ModuleList = @('.\Cackledaemon.psm1')
+
+    PrivateData = @{
+        PSData = @{
+            Tags = @('emacs')
+            LicenseUri = 'https://github.com/jfhbrook/cackledaemon/blob/master/COPYING'
+            ProjectUri = 'https://github.com/jfhbrook/cackledaemon'
+
+            # A URL to an icon representing this module.
+            # IconUri = ''
+
+            # ReleaseNotes of this module
+            # ReleaseNotes = ''
+        }
+    }
+
+    # HelpInfo URI of this module
+    # https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-create-a-helpinfo-xml-file?view=powershell-7
+    # HelpInfoURI = ''
+
+    # Default prefix for commands exported from this module. Override the default prefix using Import-Module -Prefix.
+    # DefaultCommandPrefix = ''
+
+}
+
+#+END_SRC
+* Development Tasks :export:
+Cackledaemon can be built and published using [[https://github.com/nightroman/Invoke-Build][Invoke-Build]].
+** Building Cackledaemon
+=Invoke-Build= will call Emacs in batch mode to build this project using
+~org-babel~. Alternately, you may type ~C-c C-v t~ with this file open in Emacs.
+
+This emacs batch script tangles ~cackledaemon.org~ and generates the ~README.md~:
+
+#+BEGIN_SRC emacs-lisp :tangle build.el
+(progn
+  (require 'org)
+  (require 'ob-tangle)
+  (require 'ox-md)
+
+  (with-current-buffer (find-file-noselect "cackledaemon.org")
+    (message "Tangling Code...")
+    (org-babel-tangle)
+    (message "Generating README...")
+    (org-export-to-file 'md "README.md"))
+  (message "Done."))
+#+END_SRC
+
+=Invoke-Build= wraps this in a task which shells out to Emacs:
+
+#+BEGIN_SRC powershell :tangle Cackledaemon.build.ps1
+task . Build
+
+task Build {
+    emacs.exe --batch --load build.el
+}
+
+#+END_SRC
+** Publishing Cackledaemon
+This project can be published on the Powershell Gallery by running
+=Invoke-Build Publish.= In order for it to succeed, there must be a
+=.\Secrets.ps1= file that defines =$PowershellGalleryAPIKey= as a valid
+Powershell Gallery NuGet API key. This file gets sourced by the ~Publish~ task.
+
+#+BEGIN_SRC powershell :tangle Cackledaemon.build.ps1
+task Publish Build, {
+    . .\Secrets.ps1
+     Publish-Module -Path .\Cackledaemon\ -NuGetApiKey $PowershellGalleryAPIKey
+}
+#+END_SRC
+
+* License :export:
+Cackledaemon, much like Emacs, is licensed under the terms of the GPL v3 or
+newer.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+# Copyright 2020 Josh Holbrook
+#
+# This file is part of Cackledaemon.
+#
+# Cackledaemon is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Cackledaemon is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Cackledaemon.  If not, see <https://www.gnu.org/licenses/>.
+
+
 #+END_SRC
