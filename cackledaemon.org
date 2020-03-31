@@ -572,6 +572,7 @@ task . Build
 
 task Build {
     emacs.exe --batch --load build.el
+    Remove-Item README.md~
 }
 
 #+END_SRC

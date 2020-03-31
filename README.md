@@ -1,14 +1,14 @@
 
 # Table of Contents
 
-1.  [Cackledaemon](#org014b3fd)
-2.  [Development Tasks](#orga549ef9)
-    1.  [Building Cackledaemon](#org949092b)
-    2.  [Publishing Cackledaemon](#org3ac1ee1)
-3.  [License](#orgcfb4619)
+1.  [Cackledaemon](#orge63e268)
+2.  [Development Tasks](#org868ac1f)
+    1.  [Building Cackledaemon](#org179f178)
+    2.  [Publishing Cackledaemon](#org2d0be4d)
+3.  [License](#org693a20e)
 
 
-<a id="org014b3fd"></a>
+<a id="orge63e268"></a>
 
 # Cackledaemon
 
@@ -77,14 +77,14 @@ management and rotation, and a tray icon for a lil' point-and-click action and
 notifications for if/when Emacs exits unexpectedly.
 
 
-<a id="orga549ef9"></a>
+<a id="org868ac1f"></a>
 
 # Development Tasks
 
 Cackledaemon can be built and published using [Invoke-Build](https://github.com/nightroman/Invoke-Build).
 
 
-<a id="org949092b"></a>
+<a id="org179f178"></a>
 
 ## Building Cackledaemon
 
@@ -115,7 +115,7 @@ This emacs batch script tangles `cackledaemon.org` and generates the `README.md`
     }
 
 
-<a id="org3ac1ee1"></a>
+<a id="org2d0be4d"></a>
 
 ## Publishing Cackledaemon
 
@@ -130,7 +130,7 @@ Powershell Gallery NuGet API key. This file gets sourced by the `Publish` task.
     }
 
 
-<a id="orgcfb4619"></a>
+<a id="org693a20e"></a>
 
 # License
 
