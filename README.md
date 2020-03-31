@@ -1,16 +1,16 @@
 
 # Table of Contents
 
-1.  [Introduction](#org5ce5605):export:
-2.  [Cackledaemon is Free Software](#org3296bb5):export:
-3.  [Development Tasks](#org34f34e9):export:
-    1.  [Building Cackledaemon](#org4187a8d)
-    2.  [Publishing Cackledaemon](#org39c80b7)
+1.  [Introduction](#org4742262)
+2.  [Cackledaemon is Free Software](#org10e9303)
+3.  [Development Tasks](#orgb637808)
+    1.  [Building Cackledaemon](#org5c4ebc5)
+    2.  [Publishing Cackledaemon](#org448dd74)
 
 
-<a id="org5ce5605"></a>
+<a id="org4742262"></a>
 
-# Introduction     :export:
+# Introduction
 
 > Oh-ho-ho! Swirly Photoshop magic! I bet this thing could release some serious
 > cackledemons!
@@ -77,9 +77,9 @@ management and rotation, and a tray icon for a lil' point-and-click action and
 notifications for if/when Emacs exits unexpectedly.
 
 
-<a id="org3296bb5"></a>
+<a id="org10e9303"></a>
 
-# Cackledaemon is Free Software     :export:
+# Cackledaemon is Free Software
 
 Cackledaemon is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -112,19 +112,21 @@ along with Cackledaemon.  If not, see <https://www.gnu.org/licenses/>.
     # along with Cackledaemon.  If not, see <https://www.gnu.org/licenses/>.
 
 
-<a id="org34f34e9"></a>
+<a id="orgb637808"></a>
 
-# Development Tasks     :export:
+# Development Tasks
 
 Cackledaemon can be built and published using [Invoke-Build](https://github.com/nightroman/Invoke-Build).
 
 
-<a id="org4187a8d"></a>
+<a id="org5c4ebc5"></a>
 
 ## Building Cackledaemon
 
 `Invoke-Build` will call Emacs in batch mode to build this project using
 `org-babel`. Alternately, you may type `C-c C-v t` with this file open in Emacs.
+
+This emacs batch script tangles `cackledaemon.org` and generates the `README.md`:
 
     (progn
       (require 'org)
@@ -138,6 +140,8 @@ Cackledaemon can be built and published using [Invoke-Build](https://github.com/
         (org-export-to-file 'md "README.md"))
       (message "Done."))
 
+`Invoke-Build` wraps this in a task which shells out to emacs:
+
     task . Build
     
     task Build {
@@ -145,7 +149,7 @@ Cackledaemon can be built and published using [Invoke-Build](https://github.com/
     }
 
 
-<a id="org39c80b7"></a>
+<a id="org448dd74"></a>
 
 ## Publishing Cackledaemon
 

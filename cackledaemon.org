@@ -1,5 +1,6 @@
 #+TITLE: Cackledaemon - An Emacs Daemon Manager for Windows
 #+AUTHOR: Josh Holbrook
+#+OPTIONS: tags:nil
 
 * Introduction :export:
 #+BEGIN_QUOTE
@@ -108,6 +109,8 @@ Cackledaemon can be built and published using [[https://github.com/nightroman/In
 =Invoke-Build= will call Emacs in batch mode to build this project using
 ~org-babel~. Alternately, you may type ~C-c C-v t~ with this file open in Emacs.
 
+This emacs batch script tangles ~cackledaemon.org~ and generates the ~README.md~:
+
 #+BEGIN_SRC emacs-lisp :tangle tangle.el
 (progn
   (require 'org)
@@ -121,6 +124,8 @@ Cackledaemon can be built and published using [[https://github.com/nightroman/In
     (org-export-to-file 'md "README.md"))
   (message "Done."))
 #+END_SRC
+
+=Invoke-Build= wraps this in a task which shells out to emacs:
 
 #+BEGIN_SRC powershell :tangle Cackledaemon.build.ps1
 task . Build
