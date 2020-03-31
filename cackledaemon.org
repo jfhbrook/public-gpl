@@ -1,5 +1,7 @@
 #+TITLE: Cackledaemon - An Emacs Daemon Manager for Windows
+#+AUTHOR: Josh Holbrook
 
+* Introduction :export:
 #+BEGIN_QUOTE
 Oh-ho-ho! Swirly Photoshop magic! I bet this thing could release some serious
 cackledemons!
@@ -7,7 +9,6 @@ cackledemons!
 -- Strong Bad
 #+END_QUOTE
 
-* What is Cackledaemon and Why Do I Want It?
 Anyone who has used a fully configured [[https://www.gnu.org/software/emacs/][Emacs]] install such as [[https://www.spacemacs.org/][Spacemacs]] or [[https://github.com/hlissner/doom-emacs][Doom]]
 knows that Emacs can take a long time to initially boot. This isn't for a lack
 of trying - in fact, the source code for Doom is half speed hacks and I highly
@@ -65,9 +66,9 @@ Cackledaemon is a PowerShell module that intends to be a solution for managing
 such an instance of the Emacs daemon for Windows. It includes functions for
 starting, stopping and restarting the Emacs daemon, functions and jobs for log
 management and rotation, and a tray icon for a lil' point-and-click action and
-notifications for if/when Emacs crashed.
+notifications for if/when Emacs exits unexpectedly.
 
-* Cackledaemon is Free Software
+* Cackledaemon is Free Software :export:
 Cackledaemon is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
@@ -101,7 +102,7 @@ along with Cackledaemon.  If not, see <https://www.gnu.org/licenses/>.
 
 
 #+END_SRC
-* Tasks
+* Development Tasks :export:
 Cackledaemon can be built and published using [[https://github.com/nightroman/Invoke-Build][Invoke-Build]].
 ** Building Cackledaemon
 =Invoke-Build= will call Emacs in batch mode to build this project using
@@ -109,10 +110,15 @@ Cackledaemon can be built and published using [[https://github.com/nightroman/In
 
 #+BEGIN_SRC emacs-lisp :tangle tangle.el
 (progn
+  (require 'org)
   (require 'ob-tangle)
-  (message "Tangling...")
+  (require 'ox-md)
+ 
   (with-current-buffer (find-file-noselect "cackledaemon.org")
-    (org-babel-tangle))
+    (message "Tangling...")
+    (org-babel-tangle)
+    (message "Generating README...")
+    (org-export-to-file 'md "README.md"))
   (message "Done."))
 #+END_SRC
 
@@ -127,7 +133,7 @@ task Build {
 ** Publishing Cackledaemon
 This project can be published on the Powershell Gallery by running
 =Invoke-Build Publish.= In order for it to succeed, there must be a
-[[.\Secrets.ps1]] file that defines ==$PowershellGalleryAPIKey= as a valid
+=.\Secrets.ps1= file that defines =$PowershellGalleryAPIKey= as a valid
 Powershell Gallery NuGet API key. This file gets sourced by the ~Publish~ task.
 
 #+BEGIN_SRC powershell :tangle Cackledaemon.build.ps1
