@@ -1,16 +1,16 @@
 
 # Table of Contents
 
-1.  [Cackledaemon](#orge63e268)
-2.  [Development Tasks](#org868ac1f)
-    1.  [Building Cackledaemon](#org179f178)
-    2.  [Publishing Cackledaemon](#org2d0be4d)
-3.  [License](#org693a20e)
+1.  [Introduction](#org7e3d799)
+2.  [Development Tasks](#orge3f042c)
+    1.  [Building Cackledaemon](#org34a5420)
+    2.  [Publishing Cackledaemon](#orgecf7309)
+3.  [License](#orgf0775eb)
 
 
-<a id="orge63e268"></a>
+<a id="org7e3d799"></a>
 
-# Cackledaemon
+# Introduction
 
 > Oh-ho-ho! Swirly Photoshop magic! I bet this thing could release some serious
 > cackledemons!
@@ -77,14 +77,14 @@ management and rotation, and a tray icon for a lil' point-and-click action and
 notifications for if/when Emacs exits unexpectedly.
 
 
-<a id="org868ac1f"></a>
+<a id="orge3f042c"></a>
 
 # Development Tasks
 
 Cackledaemon can be built and published using [Invoke-Build](https://github.com/nightroman/Invoke-Build).
 
 
-<a id="org179f178"></a>
+<a id="org34a5420"></a>
 
 ## Building Cackledaemon
 
@@ -115,7 +115,7 @@ This emacs batch script tangles `cackledaemon.org` and generates the `README.md`
     }
 
 
-<a id="org2d0be4d"></a>
+<a id="orgecf7309"></a>
 
 ## Publishing Cackledaemon
 
@@ -130,7 +130,7 @@ Powershell Gallery NuGet API key. This file gets sourced by the `Publish` task.
     }
 
 
-<a id="org693a20e"></a>
+<a id="orgf0775eb"></a>
 
 # License
 

@@ -2,7 +2,8 @@
 #+AUTHOR: Josh Holbrook
 #+OPTIONS: tags:nil
 
-* Cackledaemon :export:
+
+* Introduction :export:
 #+BEGIN_QUOTE
 Oh-ho-ho! Swirly Photoshop magic! I bet this thing could release some serious
 cackledemons!
@@ -71,28 +72,39 @@ notifications for if/when Emacs exits unexpectedly.
 
 * Exceptions
 Cackledaemon uses custom exceptions to signal states during lifecycle actions
-that it doesn't know how to handle.
+that it doesn't know how to handle. Note that PowerShell doesn't allow for
+exporting classes; you'll need to use duck typing.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
 class CackledaemonException: System.Exception {
-    CackledaemonException([string]$Message) : base($Message) {}
+    [string]$Type
+   
+    CackledaemonException([string]$Message): base($Message) {}
 }
 
-class CackledaemonLogRotateAlreadyRunningException: CackledaemonException {
-    CackledaemonLogRotateAlreadyRunningException([string]$Message) : base($Message) {}
+class LogRotateAlreadyRunningException: CackledaemonException {
+    LogRotateAlreadyRunningException([string]$Message) : base($Message) {
+        $this.Type = 'LOG_ROTATE_ALREADY_RUNNING'
+    }
 }
 
-class CackledaemonLogRotateNotRunningException: CackledaemonException {
-    CackledaemonLogRotateNotRunningException([string]$Message) : base($Message) {}
+class LogRotateNotRunningException: CackledaemonException {
+    LogRotateNotRunningException([string]$Message) : base($Message) {
+        $this.Type = 'LOG_ROTATE_NOT_RUNNING'
+    }
 }
 
-class CackledaemonAlreadyRunningException: CackledaemonException {
-    CackledaemonAlreadyRunningException([string]$Message) : base($Message) {}
+class EmacsAlreadyRunningException: CackledaemonException {
+    EmacsAlreadyRunningException([string]$Message) : base($Message) {
+        $this.Type = 'EMACS_ALREADY_RUNNING'
+    }
 }
 
-class CackledaemonNotRunningException: CackledaemonException {
-    CackledaemonNotRunningException([string]$Message) : base($Message) {}
+class EmacsNotRunningException: CackledaemonException {
+    EmacsNotRunningException([string]$Message) : base($Message) {
+        $this.Type = 'EMACS_NOT_RUNNING'
+    }
 }
 
 #+END_SRC
@@ -118,10 +130,12 @@ These are the settings for log location and rotation.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
-$CackledaemonLogFile = Join-Path $CackledaemonWD 'log.log'
-$CackledaemonLogSize = 1mb
-$CackledaemonLogRotate = 4
-$CackledaemonLogCheckTime = 2  # Seconds
+$CackledaemonLogFile = Join-Path $CackledaemonWD 'cackledaemon.log'
+$EmacsStdOutLogFile = Join-Path $CackledaemonWD 'emacs-stdout.log'
+$EmacsStdErrLogFile = Join-Path $CackledaemonWD 'emacs-stderr.log'
+$LogSize = 1mb
+$LogRotate = 4
+$LogCheckTime = 2  # Seconds
 
 #+END_SRC
 ** Logger
@@ -172,41 +186,45 @@ function Start-CackledaemonLogRotateJob {
         Set-Location $CackledaemonWD
 
         while ($true) {
-            If ((Get-Item $CackledaemonLogFile).Length -ge $CackledaemonLogSize) {
-                Write-CackledaemonLog 'Rotating logs...'
+            @($CackledaemonLogFile, $EmacsStdoutLogFile, $EmacsStdErrLogFile) | ForEach-Object {
+                $LogFile = $_
 
-                ($CackledaemonLogRotate..0) | ForEach-Object {
-                    $Current = Join-Path `
-                        $CackledaemonWD `
-                        $(If ($_) { 'log.log.{0}' -f $_ } Else { 'log.log' })
+                If ((Get-Item $LogFile).Length -ge $LogSize) {
+                    Write-CackledaemonLog ('Rotating {0}...' -f $LogFile)
 
-                    $Next = Join-Path $CackledaemonWD ('log.log.{0}' -f ($_ + 1))
+                    ($LogRotate..0) | ForEach-Object {
+                        $Current = $(If ($_) {
+                          '{0}.{1}' -f $LogFile, $_
+                        } Else { $LogFile })
 
-                    If (Test-Path $Current) {
-                        Write-CackledaemonLog ('Copying {0} to {1}...' -f $Current, $Next)
+                        $Next = '{0}.{1}' -f $LogFile, ($_ + 1)
 
-                        Copy-Item -Path $Current -Destination $Next
+                        If (Test-Path $Current) {
+                            Write-CackledaemonLog ('Copying {0} to {1}...' -f $Current, $Next)
+
+                            Copy-Item -Path $Current -Destination $Next
+                        }
                     }
+
+                    Write-CackledaemonLog ('Truncating {0}...' -f $LogFile)
+
+                    Clear-Content $LogFile
+
+                    $StaleLogFile = Join-Path `
+                    $CackledaemonWD `
+                    ('log.log.{0}' -f ($LogRotate + 1))
+
+                    If (Test-Path $StaleLogFile) {
+                        Write-CackledaemonLog ('Removing {0}...' -f $StaleLogFile)
+
+                        Remove-Item $StaleLogFile
+                    }
+
+                    Write-CackledaemonLog 'Done.'
                 }
-
-                Write-CackledaemonLog ('Truncating {0}...' -f $CackledaemonLogFile)
-
-                Clear-Content $CackledaemonLogFile
-
-                $StaleLogFile = Join-Path `
-                  $CackledaemonWD `
-                  ('log.log.{0}' -f ($CackledaemonLogRotate + 1))
-
-                If (Test-Path $StaleLogFile) {
-                    Write-CackledaemonLog ('Removing {0}...' -f $StaleLogFile)
-
-                    Remove-Item $StaleLogFile
-                }
-
-                Write-CackledaemonLog 'Done.'
             }
             Write-CackledaemonLog 'All quiet on the Western front...'
-            Start-Sleep -Seconds $CackledaemonLogCheckTime
+            Start-Sleep -Seconds $LogCheckTime
         }
     }
 }
@@ -300,18 +318,23 @@ save the ID, but storing the entire process object is easier.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
-$CackledaemonProcessStateFile = Join-Path $CackledaemonWD "DaemonProcessState.json"
+$CackledaemonPidFile = Join-Path $CackledaemonWD "DaemonPidFile.json"
 
-function Write-ProcessState {
+function Write-EmacsProcessToPidFile {
     param([System.Diagnostics.Process]$Process)
 
-    $Process | ConvertTo-Json | Out-File $CackledaemonProcessStateFile
+    ($Process).Id | ConvertTo-Json | Out-File $CackledaemonPidFile
 }
 
-function Get-ProcessState {
-    $Id = (Get-Content $CackledaemonProcessStateFile | ConvertFrom-Json).Id
+function Get-EmacsProcessFromPidFile {
+    If (-not (Test-Path $CackledaemonPidFile)) {
+        return $null
+    }
+
+    $Id = (Get-Content $CackledaemonPidFile | ConvertFrom-Json)
 
     If (-not $Id) {
+        Remove-Item $CackledaemonPidFile
         return $null
     }
 
@@ -324,7 +347,7 @@ It would probably be bad to try to start an Emacs daemon if one is already
 running.
 
 If an Emacs daemon is being managed, then retrieving the process state should be
-successful and we can simply check to make sure that =Retrieve-ProcessState=
+successful and we can simply check to make sure that =Retrieve-ProcessFromPidFile=
 returns a non-=$null= value. However, it's also possible to start the Emacs
 daemon out-of-band, in which case we probably don't want to get involved either.
 To check for this, we use [[https://docs.microsoft.com/en-us/powershell/module/cimcmdlets/get-ciminstance?view=powershell-7][CIM]] to find emacs processes and then check to see if
@@ -335,7 +358,7 @@ but which have called =(run-server)=.
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
 function Get-UnmanagedEmacsDaemons () {
-    $ManagedProcess = $(Retrieve-ProcessState)
+    $ManagedProcess = $(Get-EmacsProcessFromPidFile)
     return Get-CimInstance -Query "
         SELECT
           ,*
@@ -357,18 +380,18 @@ sensible parameters and stores process info so we can do basic monitoring.
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
 function Start-EmacsDaemon {
-    $Process = $(Get-ProcessState)
+    $Process = $(Get-EmacsProcessFromPidFile)
 
     If ($Process) {
-        Throw [CackledaemonAlreadyRunningException]::new(
-            "The Emacs daemon is already running and being managed!"
+        Throw [EmacsAlreadyRunningException]::new(
+            'The Emacs daemon is already running and being managed!'
         )
     }
 
     If ($(Get-UnmanagedEmacsDaemons)) {
-        Throw [CackledaemonAlreadyRunningException]::new(
-            "The Emacs daemon has already been started by someone else and " +
-            "is not being managed!"
+        Throw [EmacsAlreadyRunningException]::new(
+            'The Emacs daemon has already been started by someone else and ' +
+            'is not being managed!'
         )
     }
 
@@ -377,21 +400,29 @@ function Start-EmacsDaemon {
     Write-CackledaemonLog "Starting the Emacs daemon..."
 
     $Process = Start-Process `
-      -FilePath "emacs.exe" `
-      -ArgumentList "--daemon" `
+      -FilePath 'emacs.exe' `
+      -ArgumentList '--daemon' `
       -NoNewWindow `
-      -RedirectStandardOut $logFile `
-      -RedirectStandardError $logFile `
+      -RedirectStandardOut $EmacsStdOutLogFile `
+      -RedirectStandardError $EmacsStdErrLogFile `
       -PassThru
 
     Write-CackledaemonLog "Saving the Emacs daemon's process state..."
 
-    Write-ProcessState -Process $Process
+    Write-EmacsProcessToPidFile -Process $Process
 
-    Write-CackledaemonLog "Done."
+    Write-CackledaemonLog 'Done.'
 
     return $Process
 }
+
+#+END_SRC
+** Get the Emacs Daemon
+We actually already have this, its name just isn't very ergonomic. We'll set it
+as an alias here for convenience.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+Set-Alias -Name Get-EmacsDaemon Get-EmacsProcessFromPidFile
 
 #+END_SRC
 ** Stop the Emacs Daemon
@@ -401,23 +432,23 @@ disk and attempting to stop the process.
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
 function Stop-EmacsDaemon {
-    $Process = Retrieve-ProcessState
+    $Process = Get-EmacsProcessFromPidFile
 
     If (-not $Process) {
-        Throw [CackledaemonNotRunningException]::new(
+        Throw [EmacsNotRunningException]::new(
             "A managed Emacs daemon isn't running and can not be stopped!"
         )
     }
 
     Invoke-EnsureCackledaemonWD
 
-    Write-CackledaemonLog "Stopping the Emacs daemon..."
+    Write-CackledaemonLog 'Stopping the Emacs daemon...'
 
     Stop-Process -InputObject $Process
 
-    Store-ProcessState $null
+    Write-EmacsProcessToPidFile $null
 
-    Write-CackledaemonLog "Done."
+    Write-CackledaemonLog 'Done.'
 }
 
 #+END_SRC
@@ -429,6 +460,22 @@ From here, restarting is easy - first stop the process, then start it again.
 function Restart-EmacsDaemon {
     Stop-EmacsDaemon
     Start-EmacsDaemon
+}
+#+END_SRC
+* Installation Stuff
+It turns out that installing emacs is unzipping a zipball, running a magic
+program and manually doing a bunch of bullshit. I should just automate
+installing and checking for updates too.
+
+https://lists.gnu.org/archive/html/help-gnu-emacs/2004-03/msg00168.html
+https://www.gnu.org/software/emacs/manual/html_node/emacs/Windows-Startup.html
+
+#+BEGIN_SRC powershell
+(
+    Invoke-WebRequest https://mirrors.syringanetworks.net/gnu/emacs/windows/
+).Links.Href | Where-Object { $_.StartsWith('emacs-') } | ForEach-Object {
+    $_ -match 'emacs-(\d+)/'
+    return $Matches[1]
 }
 #+END_SRC
 * Exports
@@ -444,17 +491,15 @@ Export-ModuleMember `
       'Start-EmacsDaemon',
       'Stop-EmacsDaemon',
       'Restart-EmacsDaemon',
-      'Write-ProcessState',
-      'Get-ProcessState',
+      'Write-EmacsProcessToPidFile',
+      'Get-EmacsProcessFromPidFile',
       'Get-UnmanagedEmacsDaemons'
   ) `
   -Variable @(
-      'CackledaemonWD',
-      'CackledaemonLogFile',
-      'CackledaemonLogSize',
-      'CackledaemonLogRotate',
-      'CackledaemonLogCheckTime',
-      'CackledaemonProcessStateFile'
+      'CackledaemonWD'
+  ) `
+  -Alias @(
+      'Get-EmacsDaemon'
   )
 #+END_SRC
 * Manifest
@@ -500,6 +545,8 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
         'Invoke-EnsureCackledaemonWD'
         'Write-CackledaemonLog'
         'Start-CackledaemonLogRotateJob'
+        'Get-EmacsProcessFromPidFile'
+        'Write-EmacsProcessToPidFile'
         'Start-EmacsDaemon'
         'Stop-EmacsDaemon'
         'Restart-EmacsDaemon'
@@ -508,13 +555,10 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
     CmdletsToExport = @()
     VariablesToExport = @(
         'CackledaemonWD'
-        'CackledaemonLogFile'
-        'CackledaemonLogSize'
-        'CackledaemonLogRotate'
-        'CackledaemonLogCheckTime'
-        'CackledaemonProcessStateFile'
     )
-    AliasesToExport = @()
+    AliasesToExport = @(
+        'Get-EmacsDaemon'
+    )
 
     FileList = @('Cackledaemon.psm1', 'Cackledaemon.psd1', 'COPYING')
     ModuleList = @('.\Cackledaemon.psm1')
