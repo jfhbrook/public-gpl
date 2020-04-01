@@ -1,16 +1,5 @@
 
-# Table of Contents
-
-1.  [Introduction](#org190920a)
-2.  [Development Tasks](#org557388a)
-    1.  [Building Cackledaemon](#orgfe97d9d)
-    2.  [Publishing Cackledaemon](#org8fee6de)
-3.  [License](#orgf2c0b42)
-
-
-<a id="org190920a"></a>
-
-# Introduction
+# Cackledaemon
 
 > Oh-ho-ho! Swirly Photoshop magic! I bet this thing could release some serious
 > cackledemons!
@@ -57,7 +46,7 @@ Windows, and in fact the [approach documented in the wiki](https://www.emacswiki
 uses a Powershell script to generate a very simple [batch file](https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/windows-commands) that cleans up
 server state from the prior run and then spawns the Emacs daemon.
 
-This works OK. However, there are some downsides. If the Emacs daemon crashes
+This works OK. However, there are some downsides. if the Emacs daemon crashes
 for any reason, there's no signal other than `emacsclient` mysteriously not
 working; any logs that come out of the Emacs daemon are lost to the aether; and
 straightforward lifecycle actions that can be done casually with systemd (start,
@@ -76,61 +65,6 @@ starting, stopping and restarting the Emacs daemon, functions and jobs for log
 management and rotation, and a tray icon for a lil' point-and-click action and
 notifications for if/when Emacs exits unexpectedly.
 
-
-<a id="org557388a"></a>
-
-# Development Tasks
-
-Cackledaemon can be built and published using [Invoke-Build](https://github.com/nightroman/Invoke-Build).
-
-
-<a id="orgfe97d9d"></a>
-
-## Building Cackledaemon
-
-`Invoke-Build` will call Emacs in batch mode to build this project using
-`org-babel`. Alternately, you may type `C-c C-v t` with this file open in Emacs.
-
-This emacs batch script tangles `cackledaemon.org` and generates the `README.md`:
-
-    (progn
-      (require 'org)
-      (require 'ob-tangle)
-      (require 'ox-md)
-    
-      (with-current-buffer (find-file-noselect "cackledaemon.org")
-        (message "Tangling Code...")
-        (org-babel-tangle)
-        (message "Generating README...")
-        (org-export-to-file 'md "README.md"))
-      (message "Done."))
-
-`Invoke-Build` wraps this in a task which shells out to Emacs:
-
-    task . Build
-    
-    task Build {
-        emacs.exe --batch --load build.el
-        Remove-Item README.md~
-    }
-
-
-<a id="org8fee6de"></a>
-
-## Publishing Cackledaemon
-
-This project can be published on the Powershell Gallery by running
-`Invoke-Build Publish.` In order for it to succeed, there must be a
-`.\Secrets.ps1` file that defines `$PowershellGalleryAPIKey` as a valid
-Powershell Gallery NuGet API key. This file gets sourced by the `Publish` task.
-
-    task Publish Build, {
-        . .\Secrets.ps1
-         Publish-Module -Path .\Cackledaemon\ -NuGetApiKey $PowershellGalleryAPIKey
-    }
-
-
-<a id="orgf2c0b42"></a>
 
 # License
 
@@ -152,5 +86,5 @@ newer.
     # GNU General Public License for more details.
     #
     # You should have received a copy of the GNU General Public License
-    # along with Cackledaemon.  If not, see <https://www.gnu.org/licenses/>.
+    # along with Cackledaemon.  if not, see <https://www.gnu.org/licenses/>.
 

@@ -1,9 +1,8 @@
-#+TITLE: Cackledaemon - An Emacs Daemon Manager for Windows
+#+TITLE: Cackledaemon - An Emacs Installation and Runtime Manager for Windows
 #+AUTHOR: Josh Holbrook
-#+OPTIONS: tags:nil
+#+OPTIONS: tags:nil toc:nil
 
-
-* Introduction :export:
+* Cackledaemon :export:
 #+BEGIN_QUOTE
 Oh-ho-ho! Swirly Photoshop magic! I bet this thing could release some serious
 cackledemons!
@@ -51,7 +50,7 @@ Windows, and in fact the [[https://www.emacswiki.org/emacs/EmacsMsWindowsIntegra
 uses a Powershell script to generate a very simple [[https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/windows-commands][batch file]] that cleans up
 server state from the prior run and then spawns the Emacs daemon.
 
-This works OK. However, there are some downsides. If the Emacs daemon crashes
+This works OK. However, there are some downsides. if the Emacs daemon crashes
 for any reason, there's no signal other than ~emacsclient~ mysteriously not
 working; any logs that come out of the Emacs daemon are lost to the aether; and
 straightforward lifecycle actions that can be done casually with systemd (start,
@@ -70,56 +69,15 @@ starting, stopping and restarting the Emacs daemon, functions and jobs for log
 management and rotation, and a tray icon for a lil' point-and-click action and
 notifications for if/when Emacs exits unexpectedly.
 
-* Exceptions
-Cackledaemon uses custom exceptions to signal states during lifecycle actions
-that it doesn't know how to handle. Note that PowerShell doesn't allow for
-exporting classes; you'll need to use duck typing.
-
-#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-
-class CackledaemonException: System.Exception {
-    [string]$Type
-   
-    CackledaemonException([string]$Message): base($Message) {}
-}
-
-class LogRotateAlreadyRunningException: CackledaemonException {
-    LogRotateAlreadyRunningException([string]$Message) : base($Message) {
-        $this.Type = 'LOG_ROTATE_ALREADY_RUNNING'
-    }
-}
-
-class LogRotateNotRunningException: CackledaemonException {
-    LogRotateNotRunningException([string]$Message) : base($Message) {
-        $this.Type = 'LOG_ROTATE_NOT_RUNNING'
-    }
-}
-
-class EmacsAlreadyRunningException: CackledaemonException {
-    EmacsAlreadyRunningException([string]$Message) : base($Message) {
-        $this.Type = 'EMACS_ALREADY_RUNNING'
-    }
-}
-
-class EmacsNotRunningException: CackledaemonException {
-    EmacsNotRunningException([string]$Message) : base($Message) {
-        $this.Type = 'EMACS_NOT_RUNNING'
-    }
-}
-
-#+END_SRC
 * Working Directory
 Cackledaemon needs a place to store logs and process metadata. For this purpose,
 we use a folder inside =APPDATA=.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-
 $CackledaemonWD = Join-Path $env:APPDATA 'cackledaemon'
 
-function Invoke-EnsureCackledaemonWD {
-    If (-not (Test-Path $CackledaemonWD)) {
-        New-Item -Path $CackledaemonWD -ItemType directory
-    }
+function New-CackledaemonWD {
+    New-Item -Path $CackledaemonWD -ItemType directory
 }
 
 #+END_SRC
@@ -129,7 +87,6 @@ function Invoke-EnsureCackledaemonWD {
 These are the settings for log location and rotation.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-
 $CackledaemonLogFile = Join-Path $CackledaemonWD 'Cackledaemon.log'
 $EmacsStdOutLogFile = Join-Path $CackledaemonWD 'EmacsStdout.log'
 $EmacsStdErrLogFile = Join-Path $CackledaemonWD 'EmacsStderr.log'
@@ -144,15 +101,19 @@ simply writes a message to the log file formatted with a greppable tag and a
 timestamp.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-
-function Write-CackledaemonLog {
-    Param ([string]$Message)
-
-    Invoke-EnsureCackledaemonWD
+function Write-Log {
+    param ([string]$Message)
 
     $Line = ('[{0}] CACKLEDAEMON: {1}' -f (Get-Date -Format o), $Message)
 
     Add-Content $CackledaemonLogFile -value $Line
+}
+
+function Write-Console {
+    param ([string]$Message)
+
+    Write-Log $Message
+    Write-Host $Message
 }
 
 #+END_SRC
@@ -169,9 +130,7 @@ function Get-CackledaemonLogRotateJob {
 }
 
 function Start-CackledaemonLogRotateJob {
-    Invoke-EnsureCackledaemonWD
-
-    If (Get-CackledaemonLogRotateJob | Where-Object { $_.State -eq 'Running' }) {
+    if (Get-CackledaemonLogRotateJob | Where-Object { $_.State -eq 'Running' }) {
         throw [CackledaemonLogRotateNotRunningException]::new(
             "The Cackledaemon logrotate job is already running!"
         )
@@ -189,39 +148,39 @@ function Start-CackledaemonLogRotateJob {
             @($CackledaemonLogFile, $EmacsStdoutLogFile, $EmacsStdErrLogFile) | ForEach-Object {
                 $LogFile = $_
 
-                If ((Get-Item $LogFile).Length -ge $LogSize) {
-                    Write-CackledaemonLog ('Rotating {0}...' -f $LogFile)
+                if ((Get-Item $LogFile).Length -ge $LogSize) {
+                    Write-Log ('Rotating {0}...' -f $LogFile)
 
                     ($LogRotate..0) | ForEach-Object {
-                        $Current = $(If ($_) {
+                        $Current = $(if ($_) {
                           '{0}.{1}' -f $LogFile, $_
-                        } Else { $LogFile })
+                        } else { $LogFile })
 
                         $Next = '{0}.{1}' -f $LogFile, ($_ + 1)
 
-                        If (Test-Path $Current) {
-                            Write-CackledaemonLog ('Copying {0} to {1}...' -f $Current, $Next)
+                        if (Test-Path $Current) {
+                            Write-Log ('Copying {0} to {1}...' -f $Current, $Next)
 
                             Copy-Item -Path $Current -Destination $Next
                         }
                     }
 
-                    Write-CackledaemonLog ('Truncating {0}...' -f $LogFile)
+                    Write-Log ('Truncating {0}...' -f $LogFile)
 
                     Clear-Content $LogFile
 
                     $StaleLogFile = '{0}.{1}' -f ($LogRotate + 1)
 
-                    If (Test-Path $StaleLogFile) {
-                        Write-CackledaemonLog ('Removing {0}...' -f $StaleLogFile)
+                    if (Test-Path $StaleLogFile) {
+                        Write-Log ('Removing {0}...' -f $StaleLogFile)
 
                         Remove-Item $StaleLogFile
                     }
 
-                    Write-CackledaemonLog 'Done.'
+                    Write-Log 'Done.'
                 }
             }
-            Write-CackledaemonLog 'All quiet on the Western front...'
+            Write-Log 'All quiet on the Western front...'
             Start-Sleep -Seconds $LogCheckTime
         }
     }
@@ -234,137 +193,6 @@ function Stop-CackledaemonLogRotateJob {
 function Remove-CackledaemonLogRotateJob {
     Remove-Job -Name 'CackledaemonLogRotateJob'
 }
-
-#+END_SRC
-* Applet
-#+BEGIN_SRC powershell :tangle ./applet.ps1
-Import-Module ./Cackledaemon/Cackledaemon.psm1
-
-Add-Type -AssemblyName System.Windows.Forms
-
-$Global:AppletForm = New-Object System.Windows.Forms.Form
-$AppletForm.Visible = $False
-$AppletForm.WindowState = "minimized"
-$AppletForm.ShowInTaskbar = $False
-
-$Global:AppletIcon = New-Object System.Windows.Forms.NotifyIcon
-$AppletIcon.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon(
-    (Get-Command 'emacs.exe').Path
-)
-$AppletIcon.Visible = $True
-
-$AppletIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
-$AppletIcon.BalloonTipTitle = '???'
-$AppletIcon.BalloonTipText = '???'
-
-$ContextMenu = New-Object System.Windows.Forms.ContextMenu
-$AppletIcon.ContextMenu = $ContextMenu
-
-$StatusItem = New-Object System.Windows.Forms.MenuItem
-$StatusItem.Index = 0
-$StatusItem.Enabled = $False
-$StatusItem.Text = '[???] Emacs Daemon'
-$ContextMenu.MenuItems.Add($StatusItem) | Out-Null
-
-$AppletIcon.add_MouseDown({
-    $Process = $(Get-EmacsProcessFromPidFile)
-    If ($Process) {
-        $StatusItem.Text = '[RUNNING] Emacs Daemon'
-    } Else {
-        $StatusItem.Text = '[STOPPED] Emacs Daemon'
-    }
-})
-
-function New-Notification {
-    param (
-        [string]$hed,
-        [string]$dek
-    )
-    $AppletIcon.BalloonTipTitle = $hed
-    $AppletIcon.BalloonTipText = $dek
-    $AppletIcon.ShowBalloonTip(5000)
-}
-
-$StartDaemonItem = New-Object System.Windows.Forms.MenuItem
-$StartDaemonItem.Index = 1
-$StartDaemonItem.Text = 'Start Emacs Daemon...'
-$StartDaemonItem.add_Click({
-    Start-Process powershell.exe -ArgumentList @(
-        '-Command',
-        {
-            Import-Module ./Cackledaemon/Cackledaemon.psm1
-            Try {
-                Start-EmacsDaemon
-            } Catch {
-                Write-Error $_.Exception
-            }
-            Read-Host -Prompt '(Press enter to exit)'
-        }
-    );
-})
-$ContextMenu.MenuItems.Add($StartDaemonItem) | Out-Null
-
-$StopDaemonItem = New-Object System.Windows.Forms.MenuItem
-$StopDaemonItem.Index = 2
-$StopDaemonItem.Text = 'Stop Emacs Daemon...'
-$StopDaemonItem.add_Click({
-    Start-Process powershell.exe -ArgumentList @(
-        '-Command',
-        {
-            Import-Module ./Cackledaemon/Cackledaemon.psm1
-            Try {
-                Stop-EmacsDaemon
-            } Catch {
-                Write-Error $_.Exception
-            }
-            Read-Host -Prompt '(Press enter to exit)'
-        }
-    )
-})
-$ContextMenu.MenuItems.Add($StopDaemonItem) | Out-Null
-
-$RestartDaemonItem = New-Object System.Windows.Forms.MenuItem
-$RestartDaemonItem.Index = 3
-$RestartDaemonItem.Text = 'Restart Emacs Daemon...'
-$RestartDaemonItem.add_Click({
-    Start-Process powershell.exe -ArgumentList @(
-        '-Command',
-        {
-            Import-Module ./Cackledaemon/Cackledaemon.psm1
-            Try {
-                Restart-EmacsDaemon
-            } Catch {
-                Write-Error $_.Exception
-            }
-            Read-Host -Prompt '(Press enter to exit)'
-        }
-    )
-})
-$ContextMenu.MenuItems.Add($RestartDaemonItem) | Out-Null
-
-$OpenWDItem = New-Object System.Windows.Forms.MenuItem
-$OpenWDItem.Index = 4
-$OpenWDItem.Text = 'Open Working Directory...'
-$OpenWDItem.add_Click({
-    Start-Process $CackledaemonWD
-})
-$ContextMenu.MenuItems.Add($OpenWDItem) | Out-Null
-
-$ExitItem = New-Object System.Windows.Forms.MenuItem
-$ExitItem.Index = 5
-$ExitItem.Text = 'Close Icon'
-$ExitItem.add_Click({
-    $AppletIcon.Visible = $False
-    $AppletForm.ShowInTaskbar = $False
-    $AppletIcon.Dispose()
-    $AppletForm.Close()
-    Remove-Variable -Name AppletForm -Scope Global
-    Remove-Variable -Name AppletIcon -Scope Global
-})
-$ContextMenu.MenuItems.Add($ExitItem) | Out-Null
-
-
-$AppletForm.ShowDialog() | Out-Null
 
 #+END_SRC
 * Daemon Management
@@ -393,13 +221,13 @@ function Write-EmacsProcessToPidFile {
 }
 
 function Get-EmacsProcessFromPidFile {
-    If (-not (Test-Path $PidFile)) {
+    if (-not (Test-Path $PidFile)) {
         return $null
     }
 
     $Id = (Get-Content $PidFile | ConvertFrom-Json)
 
-    If (-not $Id) {
+    if (-not $Id) {
         Remove-Item $PidFile
         return $null
     }
@@ -412,7 +240,7 @@ function Get-EmacsProcessFromPidFile {
 It would probably be bad to try to start an Emacs daemon if one is already
 running.
 
-If an Emacs daemon is being managed, then retrieving the process state should be
+if an Emacs daemon is being managed, then retrieving the process state should be
 successful and we can simply check to make sure that =Retrieve-ProcessFromPidFile=
 returns a non-=$null= value. However, it's also possible to start the Emacs
 daemon out-of-band, in which case we probably don't want to get involved either.
@@ -448,38 +276,27 @@ sensible parameters and stores process info so we can do basic monitoring.
 function Start-EmacsDaemon {
     $Process = $(Get-EmacsProcessFromPidFile)
 
-    If ($Process) {
-        Throw [EmacsAlreadyRunningException]::new(
-            'The Emacs daemon is already running and being managed!'
-        )
+    if ($Process) {
+        Write-Error -Message 'The Emacs daemon is already running and being managed.'
+    } elseif ($(Get-UnmanagedEmacsDaemons)) {
+        Write-Error -Message 'An unmanaged Emacs daemon is running.'
+    } else {
+        Write-Console "Starting the Emacs daemon..."
+
+        $Process = Start-Process `
+        -FilePath 'emacs.exe' `
+        -ArgumentList '--daemon' `
+        -NoNewWindow `
+        -RedirectStandardOut $EmacsStdOutLogFile `
+        -RedirectStandardError $EmacsStdErrLogFile `
+        -PassThru
+
+        Write-EmacsProcessToPidFile $Process
+
+        Write-Console 'Done.'
+
+        return $Process
     }
-
-    If ($(Get-UnmanagedEmacsDaemons)) {
-        Throw [EmacsAlreadyRunningException]::new(
-            'The Emacs daemon has already been started by someone else and ' +
-            'is not being managed!'
-        )
-    }
-
-    Invoke-EnsureCackledaemonWD
-
-    Write-CackledaemonLog "Starting the Emacs daemon..."
-
-    $Process = Start-Process `
-      -FilePath 'emacs.exe' `
-      -ArgumentList '--daemon' `
-      -NoNewWindow `
-      -RedirectStandardOut $EmacsStdOutLogFile `
-      -RedirectStandardError $EmacsStdErrLogFile `
-      -PassThru
-
-    Write-CackledaemonLog "Saving the Emacs daemon's process state..."
-
-    Write-EmacsProcessToPidFile $Process
-
-    Write-CackledaemonLog 'Done.'
-
-    return $Process
 }
 
 #+END_SRC
@@ -496,25 +313,20 @@ Stopping the process is simply a matter of retrieving the process state from
 disk and attempting to stop the process.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-
 function Stop-EmacsDaemon {
     $Process = Get-EmacsProcessFromPidFile
 
-    If (-not $Process) {
-        Throw [EmacsNotRunningException]::new(
-            "A managed Emacs daemon isn't running and can not be stopped!"
-        )
+    if (-not $Process) {
+        Write-Error -Message "A managed Emacs daemon isn't running and can not be stopped!"
+    } else {
+        Write-Log 'Stopping the Emacs daemon...'
+
+        Stop-Process -InputObject $Process
+
+        Write-EmacsProcessToPidFile $null
+
+        Write-Log 'Done.'
     }
-
-    Invoke-EnsureCackledaemonWD
-
-    Write-CackledaemonLog 'Stopping the Emacs daemon...'
-
-    Stop-Process -InputObject $Process
-
-    Write-EmacsProcessToPidFile $null
-
-    Write-CackledaemonLog 'Done.'
 }
 
 #+END_SRC
@@ -527,6 +339,167 @@ function Restart-EmacsDaemon {
     Stop-EmacsDaemon
     Start-EmacsDaemon
 }
+#+END_SRC
+* Desktop Applet
+Cackledaemon uses Windows Forms to create a desktop tray applet.
+
+Note that there are a few things that may seem a little odd but are necessary:
+
+- Using global variables. This is because code running outside of this
+  function's scope, including certain kinds of callbacks, need access to these
+  properties.
+- Creating and showing a Form even though nothing is being drawn to it. If the
+  form doesn't exist when we try to generate the context menu, very strange
+  things happen.
+
+The vast majority of menu items launch a separate PowerShell instance which then
+imports Cackledaemon and attempts to run the appropriate function. As such, the
+module needs to be properly installed in PowerShell's module search paths in
+order for this applet to function properly.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+Add-Type -AssemblyName System.Windows.Forms
+
+function Invoke-CackledaemonApplet {
+
+    $Global:AppletForm = New-Object System.Windows.Forms.Form
+    $AppletForm.Visible = $False
+    $AppletForm.WindowState = "minimized"
+    $AppletForm.ShowInTaskbar = $False
+
+    $Global:AppletIcon = New-Object System.Windows.Forms.NotifyIcon
+    $AppletIcon.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon(
+        (Get-Command 'emacs.exe').Path
+    )
+    $AppletIcon.Visible = $True
+
+    $AppletIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
+    $AppletIcon.BalloonTipTitle = '???'
+    $AppletIcon.BalloonTipText = '???'
+
+    $ContextMenu = New-Object System.Windows.Forms.ContextMenu
+    $AppletIcon.ContextMenu = $ContextMenu
+
+    $StatusItem = New-Object System.Windows.Forms.MenuItem
+    $StatusItem.Index = 0
+    $StatusItem.Enabled = $False
+    $StatusItem.Text = '[???] Emacs Daemon'
+    $ContextMenu.MenuItems.Add($StatusItem) | Out-Null
+
+    $AppletIcon.add_MouseDown({
+        $Process = $(Get-EmacsProcessFromPidFile)
+        if ($Process) {
+            $StatusItem.Text = '[RUNNING] Emacs Daemon'
+        } else {
+            $StatusItem.Text = '[STOPPED] Emacs Daemon'
+        }
+    })
+
+    $StartDaemonItem = New-Object System.Windows.Forms.MenuItem
+    $StartDaemonItem.Index = 1
+    $StartDaemonItem.Text = 'Start Emacs Daemon...'
+    $StartDaemonItem.add_Click({
+        Start-Process powershell.exe -ArgumentList @(
+            '-Command',
+            {
+                Import-Module Cackledaemon
+                Try {
+                    Start-EmacsDaemon
+                } Catch {
+                    Write-Error $_.Exception
+                }
+                Read-Host -Prompt '(Press enter to exit)'
+            }
+        );
+    })
+    $ContextMenu.MenuItems.Add($StartDaemonItem) | Out-Null
+
+    $StopDaemonItem = New-Object System.Windows.Forms.MenuItem
+    $StopDaemonItem.Index = 2
+    $StopDaemonItem.Text = 'Stop Emacs Daemon...'
+    $StopDaemonItem.add_Click({
+        Start-Process powershell.exe -ArgumentList @(
+            '-Command',
+            {
+                Import-Module Cackledaemon
+                Try {
+                    Stop-EmacsDaemon
+                } Catch {
+                    Write-Error $_.Exception
+                }
+                Read-Host -Prompt '(Press enter to exit)'
+            }
+        )
+    })
+    $ContextMenu.MenuItems.Add($StopDaemonItem) | Out-Null
+
+    $RestartDaemonItem = New-Object System.Windows.Forms.MenuItem
+    $RestartDaemonItem.Index = 3
+    $RestartDaemonItem.Text = 'Restart Emacs Daemon...'
+    $RestartDaemonItem.add_Click({
+        Start-Process powershell.exe -ArgumentList @(
+            '-Command',
+            {
+                Import-Module Cackledaemon
+                Try {
+                    Restart-EmacsDaemon
+                } Catch {
+                    Write-Error $_.Exception
+                }
+                Read-Host -Prompt '(Press enter to exit)'
+            }
+        )
+    })
+    $ContextMenu.MenuItems.Add($RestartDaemonItem) | Out-Null
+
+    $OpenWDItem = New-Object System.Windows.Forms.MenuItem
+    $OpenWDItem.Index = 4
+    $OpenWDItem.Text = 'Open Working Directory...'
+    $OpenWDItem.add_Click({
+        Start-Process $CackledaemonWD
+    })
+    $ContextMenu.MenuItems.Add($OpenWDItem) | Out-Null
+
+    $ExitItem = New-Object System.Windows.Forms.MenuItem
+    $ExitItem.Index = 5
+    $ExitItem.Text = 'Close Icon'
+    $ExitItem.add_Click({
+        $AppletIcon.Visible = $False
+        $AppletIcon.Dispose()
+        $AppletForm.Close()
+        Remove-Variable -Name AppletForm -Scope Global
+        Remove-Variable -Name AppletIcon -Scope Global
+    })
+    $ContextMenu.MenuItems.Add($ExitItem) | Out-Null
+
+
+    $AppletForm.ShowDialog() | Out-Null
+}
+
+#+END_SRC
+
+Code with access to the =$AppletIcon= global variable can send notifications.
+This is generally called asynchronously.
+
+Long term it may turn out that trying to use this function won't actually work
+and I'll just have to do the two member definitions + method call.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function New-Notification {
+    param (
+        [string]$hed,
+        [string]$dek
+    )
+
+    if ($AppletIcon) {
+        $AppletIcon.BalloonTipTitle = $hed
+        $AppletIcon.BalloonTipText = $dek
+        $AppletIcon.ShowBalloonTip(5000)
+    } else {
+        Write-Error -Message "The applet isn't open so we can't send a notification."
+    }
+}
+
 #+END_SRC
 * Installation Stuff
 It turns out that installing emacs is unzipping a zipball, running a magic
@@ -548,8 +521,6 @@ https://www.gnu.org/software/emacs/manual/html_node/emacs/Windows-Startup.html
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 Export-ModuleMember `
   -Function @(
-      'Invoke-EnsureCackledaemonWD',
-      'Write-CackledaemonLog',
       'Get-CackledaemonLogRotateJob',
       'Start-CackledaemonLogRotateJob',
       'Stop-CackledaemonLogRotateJob',
@@ -587,12 +558,9 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+    GNU General Public License for more details.'
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.'
-
-    Description = 'An opinionated framework for managing the Emacs daemon in Windows'
+    Description = 'An Emacs installation and runtime manager for Windows'
 
     # Modules that must be imported into the global environment prior to importing this module
     # RequiredModules = @()
@@ -607,14 +575,15 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
     # NestedModules = @()
 
     FunctionsToExport = @(
-        'Invoke-EnsureCackledaemonWD'
-        'Write-CackledaemonLog'
-        'Start-CackledaemonLogRotateJob'
+        'Get-CackledaemonLogRotateJob',
+        'Start-CackledaemonLogRotateJob',
+        'Stop-CackledaemonLogRotateJob',
+        'Remove-CackledaemonLogRotateJob',
+        'Start-EmacsDaemon',
+        'Stop-EmacsDaemon',
+        'Restart-EmacsDaemon',
+        'Get-UnmanagedEmacsDaemons',
         'Get-EmacsProcessFromPidFile'
-        'Get-UnmanagedEmacsDaemons'
-        'Start-EmacsDaemon'
-        'Stop-EmacsDaemon'
-        'Restart-EmacsDaemon'
     )
 
     CmdletsToExport = @()
@@ -652,7 +621,7 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
 }
 
 #+END_SRC
-* Development Tasks :export:
+* Development Tasks
 Cackledaemon can be built and published using [[https://github.com/nightroman/Invoke-Build][Invoke-Build]].
 ** Building Cackledaemon
 =Invoke-Build= will call Emacs in batch mode to build this project using
@@ -718,7 +687,7 @@ newer.
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Cackledaemon.  If not, see <https://www.gnu.org/licenses/>.
+# along with Cackledaemon.  if not, see <https://www.gnu.org/licenses/>.
 
 
 #+END_SRC
