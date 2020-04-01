@@ -720,6 +720,15 @@ function Invoke-Applet {
 
     $ContextMenu.MenuItems.Add('-') | Out-Null
 
+    $EditConfigItem = New-Object System.Windows.Forms.MenuItem
+    $EditConfigItem.Text = 'Edit Configuration...'
+    $EditConfigItem.add_Click({
+        Start-InstrumentedBlock 'Failed to edit configuration' {
+            Start-Process $CackledaemonConfigLocation
+        }
+    })
+    $ContextMenu.MenuItems.Add($EditConfigItem) | Out-Null
+
     $OpenWDItem = New-Object System.Windows.Forms.MenuItem
     $OpenWDItem.Text = 'Open Working Directory...'
     $OpenWDItem.add_Click({
