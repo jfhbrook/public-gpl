@@ -96,24 +96,66 @@ $LogCheckTime = 2  # Seconds
 
 #+END_SRC
 ** Logger
-Cackledaemon's logger is dirt dirt simple. It doesn't have any log levels - it
-simply writes a message to the log file formatted with a greppable tag and a
-timestamp.
-
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Write-Log {
-    param ([string]$Message)
+    param(
+        [Parameter(Position=0)]
+        [string]$Message,
+        [string]$Level = 'Verbose',
+        [string]$Category = 'NotSpecified',
+        [string]$CategoryActivity,
+        [string]$CategoryReason
+    )
 
-    $Line = ('[{0}] CACKLEDAEMON: {1}' -f (Get-Date -Format o), $Message)
+    if (-not @('Debug', 'Verbose', 'Warning', 'Error').Contains($Level)) {
+        Write-Warning ('Write-Log called with unrecognized level {0}' -f $Level)
+        $Level = 'Warning'
+    }
+
+    $Line = ('[{0}] {1}: {2}' -f (Get-Date -Format o), $Level, $Message)
 
     Add-Content $CackledaemonLogFile -value $Line
+
+    if ($Level -eq 'Debug') {
+        Write-Debug $Line
+    } elseif ($Level -eq 'Verbose') {
+        Write-Verbose $Line
+    } elseif ($Level -eq 'Warning') {
+        Write-Warning $Line
+    } elseif ($Level -eq 'Error') {
+        Write-Error -Message $Line `
+          -Category $Category `
+          -CategoryActivity $CategoryActivity `
+          -CategoryReason $CategoryReason
+    }
 }
 
-function Write-Console {
-    param ([string]$Message)
+function Write-LogDebug {
+    [Parameter(Position=0)]
+    param([string]$Message)
 
-    Write-Log $Message
-    Write-Host $Message
+    Write-Log $Message -Level Debug
+}
+
+function Write-LogVerbose {
+    [Parameter(Position=0)]
+    param([string]$Message)
+
+    Write-Log $Message -Level Verbose
+}
+
+function Write-LogWarning {
+    [Parameter(Position=0)]
+    param([string]$Message)
+
+    Write-Log $Message -Level Warning
+}
+
+function Write-LogError {
+    [Parameter(Position=0)]
+    param([string]$Message)
+
+    Write-Log $Message -Level Error
 }
 
 #+END_SRC
@@ -131,9 +173,11 @@ function Get-CackledaemonLogRotateJob {
 
 function Start-CackledaemonLogRotateJob {
     if (Get-CackledaemonLogRotateJob | Where-Object { $_.State -eq 'Running' }) {
-        throw [CackledaemonLogRotateNotRunningException]::new(
-            "The Cackledaemon logrotate job is already running!"
-        )
+        Write-LogError `
+          -Message 'The Cackledaemon log rotate job is already running.' `
+          -Category ResourceExists `
+          -CategoryActivity 'Start-CackledaemonLogRotateJob' `
+          -CategoryReason ResourceExistsException
     }
 
     Start-Job `
@@ -149,7 +193,7 @@ function Start-CackledaemonLogRotateJob {
                 $LogFile = $_
 
                 if ((Get-Item $LogFile).Length -ge $LogSize) {
-                    Write-Log ('Rotating {0}...' -f $LogFile)
+                    Write-LogVerbose ('Rotating {0}...' -f $LogFile)
 
                     ($LogRotate..0) | ForEach-Object {
                         $Current = $(if ($_) {
@@ -165,22 +209,22 @@ function Start-CackledaemonLogRotateJob {
                         }
                     }
 
-                    Write-Log ('Truncating {0}...' -f $LogFile)
+                    Write-LogVerbose ('Truncating {0}...' -f $LogFile)
 
                     Clear-Content $LogFile
 
                     $StaleLogFile = '{0}.{1}' -f ($LogRotate + 1)
 
                     if (Test-Path $StaleLogFile) {
-                        Write-Log ('Removing {0}...' -f $StaleLogFile)
+                        Write-LogVerbose ('Removing {0}...' -f $StaleLogFile)
 
                         Remove-Item $StaleLogFile
                     }
 
-                    Write-Log 'Done.'
+                    Write-LogVerbose 'Done.'
                 }
             }
-            Write-Log 'All quiet on the Western front...'
+            Write-LogDebug ('No need to rotate logs. Sleeping for {0} seconds.' -f $LogCheckTime)
             Start-Sleep -Seconds $LogCheckTime
         }
     }
@@ -274,14 +318,26 @@ sensible parameters and stores process info so we can do basic monitoring.
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
 function Start-EmacsDaemon {
+    [CmdletBinding()]
+    param ([switch]$Wait)
+
     $Process = $(Get-EmacsProcessFromPidFile)
 
     if ($Process) {
-        Write-Error -Message 'The Emacs daemon is already running and being managed.'
+        Write-LogError `
+          -Message 'The Emacs daemon is already running and being managed.' `
+          -Category ResourceExists `
+          -CategoryActivity 'Start-EmacsDaemon' `
+          -CategoryReason ManagedResourceExistsException
+
     } elseif ($(Get-UnmanagedEmacsDaemons)) {
-        Write-Error -Message 'An unmanaged Emacs daemon is running.'
+        Write-LogError `
+          -Message 'An unmanaged Emacs daemon is running.' `
+          -Category ResourceExists `
+          -CategoryActivity 'Start-EmacsDaemon' `
+          -CategoryReason UnmanagedResourceExistsException
     } else {
-        Write-Console "Starting the Emacs daemon..."
+        Write-LogVerbose 'Starting the Emacs daemon...'
 
         $Process = Start-Process `
         -FilePath 'emacs.exe' `
@@ -293,7 +349,12 @@ function Start-EmacsDaemon {
 
         Write-EmacsProcessToPidFile $Process
 
-        Write-Console 'Done.'
+        if ($Wait) {
+            Write-Verbose 'Waiting for Emacs daemon to exit...'
+            $Process = Wait-Process -InputObject $Process
+        }
+
+        Write-Verbose 'Done.'
 
         return $Process
     }
@@ -305,7 +366,12 @@ We actually already have this, its name just isn't very ergonomic. We'll set it
 as an alias here for convenience.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-Set-Alias -Name Get-EmacsDaemon Get-EmacsProcessFromPidFile
+function Get-EmacsDaemon {
+    [CmdletBinding()]
+    param()
+
+    Get-EmacsProcessFromPidFile
+}
 
 #+END_SRC
 ** Stop the Emacs Daemon
@@ -314,18 +380,25 @@ disk and attempting to stop the process.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Stop-EmacsDaemon {
+    [CmdletBinding()]
+    param()
+
     $Process = Get-EmacsProcessFromPidFile
 
     if (-not $Process) {
-        Write-Error -Message "A managed Emacs daemon isn't running and can not be stopped!"
+        Write-LogError `
+          -Message "A managed Emacs daemon isn't running and can not be stopped!" `
+          -Category ResourceUnavailable `
+          -CategoryActivity 'Stop-EmacsDaemon' `
+          -CategoryReason ManagedResourceUnavailableException
     } else {
-        Write-Log 'Stopping the Emacs daemon...'
+        Write-LogVerbose 'Stopping the Emacs daemon...'
 
         Stop-Process -InputObject $Process
 
         Write-EmacsProcessToPidFile $null
 
-        Write-Log 'Done.'
+        Write-LogVerbose 'Done.'
     }
 }
 
@@ -377,8 +450,10 @@ order for this applet to function properly.
 Add-Type -AssemblyName System.Windows.Forms
 
 function Invoke-CackledaemonApplet {
+    [CmdletBinding()]
+    param()
 
-    # The parent form
+    # The parent Form
     $Global:AppletForm = New-Object System.Windows.Forms.Form
     $AppletForm.Visible = $False
     $AppletForm.WindowState = "minimized"
@@ -564,6 +639,7 @@ Export-ModuleMember `
       'Stop-CackledaemonLogRotateJob',
       'Remove-CackledaemonLogRotateJob',
       'Start-EmacsDaemon',
+      'Get-EmacsDaemon',
       'Stop-EmacsDaemon',
       'Restart-EmacsDaemon',
       'Get-UnmanagedEmacsDaemons',
@@ -572,10 +648,8 @@ Export-ModuleMember `
   ) `
   -Variable @(
       'CackledaemonWD'
-  ) `
-  -Alias @(
-      'Get-EmacsDaemon'
   )
+
 #+END_SRC
 * Manifest
 https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-write-a-powershell-module-manifest?view=powershell-7
@@ -619,6 +693,7 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
         'Stop-CackledaemonLogRotateJob',
         'Remove-CackledaemonLogRotateJob',
         'Start-EmacsDaemon',
+        'Get-EmacsDaemon',
         'Stop-EmacsDaemon',
         'Restart-EmacsDaemon',
         'Get-UnmanagedEmacsDaemons',
@@ -629,9 +704,6 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
     CmdletsToExport = @()
     VariablesToExport = @(
         'CackledaemonWD'
-    )
-    AliasesToExport = @(
-        'Get-EmacsDaemon'
     )
 
     FileList = @('Cackledaemon.psm1', 'Cackledaemon.psd1', 'COPYING')
