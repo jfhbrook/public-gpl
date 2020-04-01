@@ -75,11 +75,34 @@ we use a folder inside =APPDATA=.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 $CackledaemonWD = Join-Path $env:APPDATA 'cackledaemon'
+$CackledaemonConfigLocation = Join-Path $CackledaemonWD 'Configuration.ps1'
 
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function New-CackledaemonWD {
     New-Item -Path $CackledaemonWD -ItemType directory
+
+    $ModuleDirectory = Split-Path -Path (Get-Module Cackledaemon).Path -Parent
+    $SourceConfigFile = Join-Path $ModuleDirectory 'DefaultConfiguration.ps1'
+    $DestinationConfigFile = Join-Path $CackledaemonWD 'Configuration.ps1'
+
+    Copy-Item $SourceConfigFile $DestinationConfigFile
 }
 
+#+END_SRC
+* Configuration
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/DefaultConfiguration.ps1
+# Logging Settings
+$CackledaemonLogFile = Join-Path $CackledaemonWD 'Cackledaemon.log'
+$EmacsStdOutLogFile = Join-Path $CackledaemonWD 'EmacsStdout.log'
+$EmacsStdErrLogFile = Join-Path $CackledaemonWD 'EmacsStderr.log'
+$LogSize = 1mb
+$LogRotate = 4
+$LogCheckTime = 60  # Seconds
+
+# Applet Settings
+$NotifyTimeout = 5000
 #+END_SRC
 * Job Management
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
@@ -147,19 +170,6 @@ function Disable-CackledaemonJob {
 #+END_SRC
 
 * Logging
-** Settings
-These are the settings for log location and rotation.
-
-#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-$CackledaemonLogFile = Join-Path $CackledaemonWD 'Cackledaemon.log'
-$EmacsStdOutLogFile = Join-Path $CackledaemonWD 'EmacsStdout.log'
-$EmacsStdErrLogFile = Join-Path $CackledaemonWD 'EmacsStderr.log'
-$LogSize = 1mb
-$LogRotate = 4
-$LogCheckTime = 60  # Seconds
-
-#+END_SRC
-
 ** Logger
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Write-Log {
@@ -167,55 +177,26 @@ function Write-Log {
         [Parameter(Position=0)]
         [string]$Message,
         [string]$Level = 'Verbose',
-        [string]$Exception,
-        [string]$Category = 'NotSpecified',
+        [Exception]$Exception,
+        [System.Management.Automation.ErrorCategory]$Category = 'NotSpecified',
         [string]$CategoryActivity,
         [string]$CategoryReason,
         [string]$CategoryTargetName,
         [string]$CategoryTargetType
     )
 
+    Try {
+        . $CackledaemonConfigLocation
+    } Catch {
+        Write-Warning 'Unable to load configuration! Unable to write to log file.'
+    }
+
     if (-not @('Debug', 'Verbose', 'Warning', 'Error').Contains($Level)) {
         Write-Warning ('Write-Log called with unrecognized level {0}' -f $Level)
         $Level = 'Warning'
     }
 
-    if (
-        (-not @(
-            'NotSpecified',
-            'OpenError',
-            'CloseError',
-            'DeviceError',
-            'DeadlockDetected',
-            'InvalidArgument',
-            'InvalidData',
-            'InvalidOperation',
-            'OperationTimeout',
-            'SyntaxError',
-            'ParserError',
-            'PermissionDenied',
-            'ResourceBusy',
-            'ResourceExists',
-            'ResourceUnavailable',
-            'ReadError',
-            'WriteError',
-            'FromStdErr',
-            'SecurityError',
-            'ProtocolError',
-            'ConnectionError',
-            'AuthenticationError',
-            'LimitsExceeded',
-            'QuotaExceeded',
-            'NotEnabled'
-        ).Contains($Category)) -and ($Level -eq 'Error')
-    ) {
-        Write-Warning ('Write-Log called with unrecognized error category "{0}"' -f $Category)
-        $Category = 'NotSpecified'
-    }
-
     $Line = ('[{0}] {1}: {2}' -f (Get-Date -Format o), $Level, $Message)
-
-    Add-Content $CackledaemonLogFile -value $Line
 
     if ($Level -eq 'Debug') {
         Write-Debug $Message
@@ -226,15 +207,27 @@ function Write-Log {
     } elseif ($Level -eq 'Error') {
         if ($Exception) {
             $Message = ('{0} (Exception: {1})' -f $Message, $Exception)
+
+
+            Write-Error -Message $Message `
+              -Exception $Exception `
+              -Category $Category `
+              -CategoryActivity $CategoryActivity `
+              -CategoryReason $CategoryReason `
+              -CategoryTargetName $CategoryTargetName `
+              -CategoryTargetType $CategoryTargetType
+        } else {
+            Write-Error -Message $Message `
+              -Category $Category `
+              -CategoryActivity $CategoryActivity `
+              -CategoryReason $CategoryReason `
+              -CategoryTargetName $CategoryTargetName `
+              -CategoryTargetType $CategoryTargetType
         }
-       
-        Write-Error -Message $Message `
-          -Exception $Exception `
-          -Category $Category `
-          -CategoryActivity $CategoryActivity `
-          -CategoryReason $CategoryReason `
-          -CategoryTargetName $CategoryTargetName `
-          -CategoryTargetType $CategoryTargetType
+    }
+
+    if ($CackledaemonLogFile) {
+        Add-Content $CackledaemonLogFile -value $Line
     }
 }
 
@@ -260,23 +253,35 @@ function Write-LogWarning {
 }
 
 function Write-LogError {
-    [Parameter(Position=0)]
-    param([string]$Message)
-    [string]$Exception,
-    [string]$Category = 'NotSpecified',
-    [string]$CategoryActivity,
-    [string]$CategoryReason,
-    [string]$CategoryTargetName,
-    [string]$CategoryTargetType
+    param(
+        [Parameter(Position=0)]
+        [string]$Message,
+        [Exception]$Exception,
+        [System.Management.Automation.ErrorCategory]$Category = 'NotSpecified',
+        [string]$CategoryActivity,
+        [string]$CategoryReason,
+        [string]$CategoryTargetName,
+        [string]$CategoryTargetType
+    )
 
-    Write-Log -Level Error `
-      -Message $Message `
-      -Exception $Exception `
-      -Category $Category `
-      -CategoryActivity $CategoryActivity `
-      -CategoryReason $CategoryReason `
-      -CategoryTargetName $CategoryTargetName `
-      -CategoryTargetType $CategoryTargetType
+    if ($Exception) {
+        Write-Log -Level Error `
+          -Message $Message `
+          -Exception $Exception `
+          -Category $Category `
+          -CategoryActivity $CategoryActivity `
+          -CategoryReason $CategoryReason `
+          -CategoryTargetName $CategoryTargetName `
+          -CategoryTargetType $CategoryTargetType
+    } else {
+        Write-Log -Level Error `
+          -Message $Message `
+          -Category $Category `
+          -CategoryActivity $CategoryActivity `
+          -CategoryReason $CategoryReason `
+          -CategoryTargetName $CategoryTargetName `
+          -CategoryTargetType $CategoryTargetType
+    }
 }
 
 #+END_SRC
@@ -433,6 +438,8 @@ function Start-EmacsDaemon {
     [CmdletBinding()]
     param ([switch]$Wait)
 
+    . $CackledaemonConfigLocation
+
     $Process = $(Get-EmacsProcessFromPidFile)
 
     if ($Process) {
@@ -452,12 +459,12 @@ function Start-EmacsDaemon {
         Write-LogVerbose 'Starting the Emacs daemon...'
 
         $Process = Start-Process `
-        -FilePath 'emacs.exe' `
-        -ArgumentList '--daemon' `
-        -NoNewWindow `
-        -RedirectStandardOut $EmacsStdOutLogFile `
-        -RedirectStandardError $EmacsStdErrLogFile `
-        -PassThru
+          -FilePath 'emacs.exe' `
+          -ArgumentList '--daemon' `
+          -NoNewWindow `
+          -RedirectStandardOut $EmacsStdOutLogFile `
+          -RedirectStandardError $EmacsStdErrLogFile `
+          -PassThru
 
         Write-EmacsProcessToPidFile $Process
 
@@ -515,6 +522,22 @@ function Stop-EmacsDaemon {
 }
 
 #+END_SRC
+** Restart the Emacs Daemon
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Restart-EmacsDaemon {
+    [CmdletBinding()]
+    param()
+
+    try {
+        Stop-EmacsDaemon -ErrorAction Stop
+    } catch {
+        Write-LogWarning $_.Exception.Message
+    }
+
+    Start-EmacsDaemon
+}
+
+#+END_SRC
 * Desktop Applet
 Cackledaemon uses Windows Forms to create a desktop tray applet.
 
@@ -554,8 +577,6 @@ function Invoke-Applet {
     )
     $AppletIcon.Visible = $True
 
-    $NotifyTimeout = 5000
-
     # Notify the user if something fails
 
     function Start-InstrumentedBlock {
@@ -572,6 +593,13 @@ function Invoke-Applet {
         try {
             Invoke-Command -ScriptBlock $ScriptBlock
         } catch {
+            Try {
+                . $CackledaemonConfigLocation
+            } Catch {
+                Write-Warning 'Unable to load configuration! Using default notify timeout.'
+                $NotifyTimeout = 5000
+            }
+
             Write-LogError -Message $_.Exception.Message `
               -Exception $_.Exception `
               -Category $_.CategoryInfo.Category `
@@ -610,10 +638,12 @@ function Invoke-Applet {
             $DaemonStatusItem.Text = '[RUNNING] Emacs Daemon'
             $StartDaemonItem.Enabled = $False
             $StopDaemonItem.Enabled = $True
+            $RestartDaemonItem.Enabled = $True
         } else {
             $DaemonStatusItem.Text = '[STOPPED] Emacs Daemon'
             $StartDaemonItem.Enabled = $True
             $StopDaemonItem.Enabled = $False
+            $RestartDaemonItem.Enabled = $True
         }
 
         $Job = Get-Job -Name 'LogRotateJob' -ErrorAction SilentlyContinue
@@ -708,16 +738,25 @@ function Invoke-Applet {
     # Lifecycle events
 
     $AppletForm.add_Load({
-        Start-InstrumentedBlock 'Failed to initialize Cackledaemon' {
+        Start-InstrumentedBlock 'Failed to start the Emacs daemon' {
             Start-EmacsDaemon -ErrorAction Stop
+        }
+        Start-InstrumentedBlock 'Failed to enable log rotation' {
             Enable-LogRotateJob -ErrorAction Stop
         }
     })
 
     $ExitItem.add_Click({
-        Start-InstrumentedBlock 'Failed to gracefully shut down Cackledaemon' {
-            Stop-EmacsDaemon -ErrorAction Stop
-            Disable-LogRotateJob -ErrorAction Stop
+        if (Get-EmacsDaemon) {
+            Start-InstrumentedBlock 'Failed to gracefully shut down Emacs' {
+                Stop-EmacsDaemon -ErrorAction Stop
+            }
+        }
+
+        if (Get-Job -Name 'LogRotateJob' -ErrorAction SilentlyContinue) {
+            Start-InstrumentedBlock 'Failed to gracefully shut down log rotation' {
+                Disable-LogRotateJob -ErrorAction Stop
+            }
         }
         $AppletIcon.Visible = $False
         $AppletIcon.Dispose()
@@ -736,6 +775,7 @@ function Invoke-Applet {
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 Export-ModuleMember `
   -Function @(
+      'New-CackledaemonWD',
       'Invoke-LogRotate',
       'Enable-LogRotateJob',
       'Disable-LogRotateJob',
@@ -747,7 +787,8 @@ Export-ModuleMember `
       'Invoke-Applet'
   ) `
   -Variable @(
-      'CackledaemonWD'
+      'CackledaemonWD',
+      'CackledaemonConfigLocation'
   )
 
 #+END_SRC
@@ -788,6 +829,7 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
     # NestedModules = @()
 
     FunctionsToExport = @(
+        'New-CackledaemonWD',
         'Invoke-LogRotate',
         'Enable-LogRotateJob',
         'Disable-LogRotateJob',
@@ -801,10 +843,16 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
 
     CmdletsToExport = @()
     VariablesToExport = @(
-        'CackledaemonWD'
+        'CackledaemonWD',
+        'CackledaemonConfigLocation'
     )
 
-    FileList = @('Cackledaemon.psm1', 'Cackledaemon.psd1', 'COPYING')
+    FileList = @(
+        'Cackledaemon.psm1',
+        'Cackledaemon.psd1',
+        'DefaultConfiguration.ps1',
+        'COPYING'
+    )
     ModuleList = @('.\Cackledaemon.psm1')
 
     PrivateData = @{
