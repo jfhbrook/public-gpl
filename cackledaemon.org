@@ -241,7 +241,7 @@ It would probably be bad to try to start an Emacs daemon if one is already
 running.
 
 if an Emacs daemon is being managed, then retrieving the process state should be
-successful and we can simply check to make sure that =Retrieve-ProcessFromPidFile=
+successful and we can simply check to make sure that =Get-EmacsProcessFromPidFile=
 returns a non-=$null= value. However, it's also possible to start the Emacs
 daemon out-of-band, in which case we probably don't want to get involved either.
 To check for this, we use [[https://docs.microsoft.com/en-us/powershell/module/cimcmdlets/get-ciminstance?view=powershell-7][CIM]] to find emacs processes and then check to see if
@@ -340,6 +340,22 @@ function Restart-EmacsDaemon {
     Start-EmacsDaemon
 }
 #+END_SRC
+* Installation Stuff
+It turns out that installing emacs is unzipping a zipball, running a magic
+program and manually doing a bunch of bullshit. I should just automate
+installing and checking for updates too.
+
+https://lists.gnu.org/archive/html/help-gnu-emacs/2004-03/msg00168.html
+https://www.gnu.org/software/emacs/manual/html_node/emacs/Windows-Startup.html
+
+#+BEGIN_SRC powershell
+(
+    Invoke-WebRequest https://mirrors.syringanetworks.net/gnu/emacs/windows/
+).Links.Href | Where-Object { $_.StartsWith('emacs-') } | ForEach-Object {
+    $_ -match 'emacs-(\d+)/'
+    return $Matches[1]
+}
+#+END_SRC
 * Desktop Applet
 Cackledaemon uses Windows Forms to create a desktop tray applet.
 
@@ -362,107 +378,145 @@ Add-Type -AssemblyName System.Windows.Forms
 
 function Invoke-CackledaemonApplet {
 
+    # The parent form
     $Global:AppletForm = New-Object System.Windows.Forms.Form
     $AppletForm.Visible = $False
     $AppletForm.WindowState = "minimized"
     $AppletForm.ShowInTaskbar = $False
 
+    # The NotifyIcon
     $Global:AppletIcon = New-Object System.Windows.Forms.NotifyIcon
     $AppletIcon.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon(
         (Get-Command 'emacs.exe').Path
     )
     $AppletIcon.Visible = $True
 
-    $AppletIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
-    $AppletIcon.BalloonTipTitle = '???'
-    $AppletIcon.BalloonTipText = '???'
+    $NotifyTimeout = 5000
 
+    # The right-click menu
     $ContextMenu = New-Object System.Windows.Forms.ContextMenu
     $AppletIcon.ContextMenu = $ContextMenu
 
-    $StatusItem = New-Object System.Windows.Forms.MenuItem
-    $StatusItem.Index = 0
-    $StatusItem.Enabled = $False
-    $StatusItem.Text = '[???] Emacs Daemon'
-    $ContextMenu.MenuItems.Add($StatusItem) | Out-Null
+    # Status items
+    $DaemonStatusItem = New-Object System.Windows.Forms.MenuItem
+    $DaemonStatusItem.Index = 0
+    $DaemonStatusItem.Enabled = $False
+    $DaemonStatusItem.Text = '[???] Emacs Daemon'
+    $ContextMenu.MenuItems.Add($DaemonStatusItem) | Out-Null
+
+    $LogRotateStatusItem = New-Object System.Windows.Forms.MenuItem
+    $LogRotateStatusItem.Enabled = $False
+    $LogRotateStatusItem.Text = '[???] Emacs Logs Rotation'
+    $ContextMenu.MenuItems.Add($LogRotateStatusItem) | Out-Null
 
     $AppletIcon.add_MouseDown({
-        $Process = $(Get-EmacsProcessFromPidFile)
+        $Process = Get-EmacsProcessFromPidFile
         if ($Process) {
-            $StatusItem.Text = '[RUNNING] Emacs Daemon'
+            $DaemonStatusItem.Text = '[RUNNING] Emacs Daemon'
         } else {
-            $StatusItem.Text = '[STOPPED] Emacs Daemon'
+            $DaemonStatusItem.Text = '[STOPPED] Emacs Daemon'
+        }
+
+        $Job = Get-CackledaemonLogRotateJob
+        if (-not $Job) {
+            $LogRotateStatusItem.Text = '[DISABLED] Logs Rotation'
+        } else {
+            $LogRotateStatusItem.Text = ('[{0}] Logs Rotation' -f $Job.State.ToUpper())
         }
     })
 
+    $ContextMenu.MenuItems.Add('-') | Out-Null
+
+    # Daemon lifecycle items
+
     $StartDaemonItem = New-Object System.Windows.Forms.MenuItem
-    $StartDaemonItem.Index = 1
     $StartDaemonItem.Text = 'Start Emacs Daemon...'
     $StartDaemonItem.add_Click({
-        Start-Process powershell.exe -ArgumentList @(
-            '-Command',
-            {
-                Import-Module Cackledaemon
-                Try {
-                    Start-EmacsDaemon
-                } Catch {
-                    Write-Error $_.Exception
-                }
-                Read-Host -Prompt '(Press enter to exit)'
-            }
-        );
+        try {
+            Start-EmacsDaemon
+        } catch {
+            $AppletIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
+            $AppletIcon.BalloonTipTitle = 'Failed to start the Emacs daemon'
+            $AppletIcon.BalloonTipText = $_.Exception
+            $AppletIcon.ShowBalloonTip($NotifyTimeout)
+        }
     })
     $ContextMenu.MenuItems.Add($StartDaemonItem) | Out-Null
 
     $StopDaemonItem = New-Object System.Windows.Forms.MenuItem
-    $StopDaemonItem.Index = 2
     $StopDaemonItem.Text = 'Stop Emacs Daemon...'
     $StopDaemonItem.add_Click({
-        Start-Process powershell.exe -ArgumentList @(
-            '-Command',
-            {
-                Import-Module Cackledaemon
-                Try {
-                    Stop-EmacsDaemon
-                } Catch {
-                    Write-Error $_.Exception
-                }
-                Read-Host -Prompt '(Press enter to exit)'
-            }
-        )
+        try {
+            Stop-EmacsDaemon
+        } catch {
+            $AppletIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
+            $AppletIcon.BalloonTipTitle = 'Failed to stop the Emacs daemon'
+            $AppletIcon.BalloonTipText = $_.Exception
+            $AppletIcon.ShowBalloonTip($NotifyTimeout)
+        }
     })
     $ContextMenu.MenuItems.Add($StopDaemonItem) | Out-Null
 
     $RestartDaemonItem = New-Object System.Windows.Forms.MenuItem
-    $RestartDaemonItem.Index = 3
     $RestartDaemonItem.Text = 'Restart Emacs Daemon...'
     $RestartDaemonItem.add_Click({
-        Start-Process powershell.exe -ArgumentList @(
-            '-Command',
-            {
-                Import-Module Cackledaemon
-                Try {
-                    Restart-EmacsDaemon
-                } Catch {
-                    Write-Error $_.Exception
-                }
-                Read-Host -Prompt '(Press enter to exit)'
-            }
-        )
+        try {
+            Restart-EmacsDaemon
+        } catch {
+            $AppletIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
+            $AppletIcon.BalloonTipTitle = 'Failed to restart the Emacs daemon'
+            $AppletIcon.BalloonTipText = $_.Exception
+            $AppletIcon.ShowBalloonTip($NotifyTimeout)
+        }
     })
     $ContextMenu.MenuItems.Add($RestartDaemonItem) | Out-Null
 
+    $ContextMenu.MenuItems.Add('-') | Out-Null
+
+    # Log rotate items
+
+    $EnableLogRotateJobItem = New-Object System.Windows.Forms.MenuItem
+    $EnableLogRotateJobItem.Text = 'Enable Log Rotation...'
+    $EnableLogRotateJobItem.add_Click({
+        try {
+            Start-CackledaemonLogRotateJob
+        } catch {
+            $AppletIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
+            $AppletIcon.BalloonTipTitle = 'Failed to enable log rotation'
+            $AppletIcon.BalloonTipText = $_.Exception
+            $AppletIcon.ShowBalloonTip($NotifyTimeout)
+        }
+    })
+    $ContextMenu.MenuItems.Add($EnableLogRotateJobItem) | Out-Null
+
+    $DisableLogRotateJobItem = New-Object System.Windows.Forms.MenuItem
+    $DisableLogRotateJobItem.Text = 'Disable Log Rotation...'
+    $DisableLogRotateJobItem.add_Click({
+        try {
+            Stop-CackledaemonLogRotateJob
+            Remove-CackledaemonLogRotateJob
+        } catch {
+            $AppletIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
+            $AppletIcon.BalloonTipTitle = 'Failed to disable log rotation'
+            $AppletIcon.BalloonTipText = $_.Exception
+            $AppletIcon.ShowBalloonTip($NotifyTimeout)
+        }
+    })
+    $ContextMenu.MenuItems.Add($DisableLogRotateJobItem) | Out-Null
+
+    $ContextMenu.MenuItems.Add('-') | Out-Null
+
     $OpenWDItem = New-Object System.Windows.Forms.MenuItem
-    $OpenWDItem.Index = 4
     $OpenWDItem.Text = 'Open Working Directory...'
     $OpenWDItem.add_Click({
         Start-Process $CackledaemonWD
     })
     $ContextMenu.MenuItems.Add($OpenWDItem) | Out-Null
 
+    $ContextMenu.MenuItems.Add('-') | Out-Null
+
     $ExitItem = New-Object System.Windows.Forms.MenuItem
-    $ExitItem.Index = 5
-    $ExitItem.Text = 'Close Icon'
+    $ExitItem.Text = 'Close Tray Applet'
     $ExitItem.add_Click({
         $AppletIcon.Visible = $False
         $AppletIcon.Dispose()
@@ -501,22 +555,6 @@ function New-Notification {
 }
 
 #+END_SRC
-* Installation Stuff
-It turns out that installing emacs is unzipping a zipball, running a magic
-program and manually doing a bunch of bullshit. I should just automate
-installing and checking for updates too.
-
-https://lists.gnu.org/archive/html/help-gnu-emacs/2004-03/msg00168.html
-https://www.gnu.org/software/emacs/manual/html_node/emacs/Windows-Startup.html
-
-#+BEGIN_SRC powershell
-(
-    Invoke-WebRequest https://mirrors.syringanetworks.net/gnu/emacs/windows/
-).Links.Href | Where-Object { $_.StartsWith('emacs-') } | ForEach-Object {
-    $_ -match 'emacs-(\d+)/'
-    return $Matches[1]
-}
-#+END_SRC
 * Exports
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 Export-ModuleMember `
@@ -529,7 +567,8 @@ Export-ModuleMember `
       'Stop-EmacsDaemon',
       'Restart-EmacsDaemon',
       'Get-UnmanagedEmacsDaemons',
-      'Get-EmacsProcessFromPidFile'
+      'Get-EmacsProcessFromPidFile',
+      'Invoke-CackledaemonApplet'
   ) `
   -Variable @(
       'CackledaemonWD'
@@ -583,7 +622,8 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
         'Stop-EmacsDaemon',
         'Restart-EmacsDaemon',
         'Get-UnmanagedEmacsDaemons',
-        'Get-EmacsProcessFromPidFile'
+        'Get-EmacsProcessFromPidFile',
+        'Invoke-CackledaemonApplet'
     )
 
     CmdletsToExport = @()
