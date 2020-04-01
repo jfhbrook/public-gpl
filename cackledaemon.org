@@ -112,19 +112,20 @@ class Version : IComparable {
         $this.Minor = $Minor
     }
 
-    [int]CompareTo([object]$other) {
-        if ($other -eq $null) {
+    [int]CompareTo([object]$Other) {
+        if ($Other -eq $null) {
             return 1
         }
-        $other = [Version]$other
 
-        if ($this.Major -gt $other.Major) {
+        $Other = [Version]$Other
+
+        if ($this.Major -gt $Other.Major) {
             return 1
-        } elseif ($this.Major -lt $other.Major) {
+        } elseif ($this.Major -lt $Other.Major) {
             return -1
-        } elseif ($this.Minor -gt $other.Minor) {
+        } elseif ($this.Minor -gt $Other.Minor) {
             return 1
-        } elseif ($this.Minor -lt $other.Minor) {
+        } elseif ($this.Minor -lt $Other.Minor) {
             return -1
         } else {
             return 0
@@ -136,6 +137,151 @@ function Get-EmacsVersion {
     if ((emacs.exe --version)[0] -match '^GNU Emacs (\d+)\.(\d+)$') {
         New-Object Version $Matches[1], $Matches[2]
     }
+}
+
+$EmacsWindowsEndpoint = 'https://ftp.gnu.org/gnu/emacs/windows/'
+
+class Download: IComparable {
+    [Version]$Version
+    [string]$Href
+
+    Download([int64]$Major, [int64]$Minor, [string]$Href) {
+        $this.Version = New-Object Version $Major, $Minor
+        $this.Href = $Href
+    }
+
+    [int]CompareTo([object]$Other) {
+        if ($Other -eq $null) {
+            return 1
+        }
+
+        $Other = [Download]$Other
+
+        return $this.Version.CompareTo($Other.Version)
+    }
+}
+
+function Get-AvailableEmacsDownloads {
+    (Invoke-WebRequest $EmacsWindowsEndpoint).Links | ForEach-Object {
+        if ($_.href -match '^emacs-(\d+)/$') {
+            $MajorPathPart = $_.href
+            (Invoke-WebRequest ($EmacsWindowsEndpoint + $_.href)).Links | ForEach-Object {
+                 if ($_.href -match '^emacs-(\d+)\.(\d+)-x86_64\.zip$') {
+                     $Href = $EmacsWindowsEndpoint + $MajorPathPart + $_.href
+                     return New-Object Download $Matches[1], $Matches[2], $Href
+                 }
+            }
+        }
+    } | Where-Object {$_}
+}
+
+function Get-LatestEmacsDownload {
+    (Get-AvailableEmacsDownloads | Measure-Object -Maximum).Maximum
+}
+
+class Workspace : IDisposable {
+    [System.IO.DirectoryInfo]$Root
+    [System.IO.DirectoryInfo]$Archives
+    [System.IO.DirectoryInfo]$Installs
+    [System.IO.DirectoryInfo]$Backups
+
+    Workspace([string]$Path) {
+        $ArchivesPath = Join-Path $Path 'archives'
+        $InstallsPath = Join-Path $Path 'installs'
+        $BackupsPath = Join-Path $Path 'backups'
+
+        if (Test-Path $Path) {
+            $this.Root = Get-Item $Path
+        } else {
+            $this.Root = New-Item -Type Directory $Path
+        }
+        if (Test-Path $ArchivesPath) {
+            $this.Archives = Get-Item $ArchivesPath
+        } else {
+            $this.Archives = New-Item -Type Directory $ArchivesPath
+        }
+        if (Test-Path $InstallsPath) {
+            $this.Installs = Get-Item $InstallsPath
+        } else {
+            $this.Installs = New-Item -Type Directory $InstallsPath
+        }
+        if (Test-Path $BackupsPath) {
+            $this.Backups = Get-Item $BackupsPath
+        } else {
+            $this.Backups = New-Item -Type Directory $BackupsPath
+        }
+    }
+
+    Dispose() {
+        Remove-Item $this.Root -Recurse
+    }
+}
+
+function New-TempWorkspace {
+    $TempDir = Join-Path `
+      ([System.IO.Path]::GetTempPath()) `
+      ('cackledaemon-{0}' -f (New-GUID))
+
+    return New-Object Workspace $TempDir
+}
+
+function Remove-Workspace {
+    param(
+        [Workspace]$Workspace
+    )
+
+    $Workspace.Dispose()
+}
+
+$Workspace = New-TempWorkspace
+
+$EmacsInstallLocation = Join-Path $Env:ProgramFiles 'emacs'
+
+function New-EmacsArchive {
+    param(
+        [Parameter(Position=0)]
+        [Download]$Download
+    )
+
+    $Archive = Join-Path $Workspace.Archives.FullName (Split-Path $Download.Href -Leaf)
+
+    Invoke-WebRequest `
+      -Uri $Download.Href `
+      -OutFile $Archive
+
+    return Get-Item $Archive
+}
+
+function Extract-EmacsArchive {
+    param(
+        [System.IO.FileInfo]$Archive
+    )
+    $Source = $Archive.FullName
+
+    $Destination = Join-Path $Workspace.Installs.FullName $Archive.BaseName
+
+    Expand-Archive -Path $Source -DestinationPath $Destination
+
+    return Get-Item $Destination
+}
+
+function Update-EmacsInstall {
+    param(
+        [System.IO.DirectoryInfo]$Source
+    )
+
+    $Destination = $EmacsInstallLocation
+    $Backup = Join-Path $Workspace.Backups.FullName ('emacs-{0}' -f (Get-Date -Format 'o'))
+
+    if (Test-Path $Destination -ErrorAction Stop) {
+        Copy-Item $Destination $Backup -ErrorAction Stop
+        Remove-Item $Destination -ErrorAction Stop
+    }
+
+    Move-Item $Source $Destination -ErrorAction Stop
+    Remove-Item $Backup
+
+    return Get-Item $Destination
 }
 
 #+END_SRC
