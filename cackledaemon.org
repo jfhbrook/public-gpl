@@ -81,6 +81,70 @@ function New-CackledaemonWD {
 }
 
 #+END_SRC
+* Job Management
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Enable-CackledaemonJob {
+    [CmdletBinding()]
+    param(
+        [Parameter(Position=0)]
+        [string]$Name,
+        [Parameter(Position=1)]
+        [ScriptBlock]$ScriptBlock
+    )
+
+    $Job = Get-Job -Name $Name -ErrorAction SilentlyContinue
+
+    if ($Job) {
+        Write-LogWarning ('{0} job already exists. Trying to stop and remove...' -f $Name)
+            Disable-CackledaemonJob -ErrorAction Stop
+
+    }
+
+    $Job = Get-Job -Name $Name -ErrorAction SilentlyContinue
+
+    if ($Job) {
+        Write-LogError -Message ('{0} job somehow still exists - not attempting to start a new one.' -f $Name) `
+          -Category 'ResourceExists' `
+          -CategoryActivity 'Enable-CackledaemonJob' `
+          -CategoryReason 'UnstoppableJobException'
+    } else {
+        Start-Job `
+          -Name $Name `
+          -InitializationScript {
+              Import-Module Cackledaemon
+          } `
+          -ScriptBlock $ScriptBlock
+    }
+}
+
+function Disable-CackledaemonJob {
+    [CmdletBinding()]
+    param(
+        [Parameter(Position=0)]
+        [string]$Name
+    )
+
+    $Job = Get-Job -Name $Name -ErrorAction SilentlyContinue
+
+    if (-not $Job) {
+        Write-LogWarning ("{0} job doesn't exist. Doing nothing." -f $Name)
+    }
+
+    try {
+        Stop-Job -Name $Name -ErrorAction Stop
+        Remove-Job -Name $Name
+    } catch {
+        Write-LogError -Message ('Failed to stop and remove {0} job.' -f $Name) `
+            -Exception $_.Exception `
+            -Category $_.CategoryInfo.Category `
+            -CategoryActivity $_.CategoryInfo.Activity `
+            -CategoryReason $_.CategoryInfo.Reason `
+            -CategoryTargetName $_.CategoryInfo.TargetName `
+            -CategoryTargetType $_.CategoryInfo.TargetType
+    }
+}
+
+#+END_SRC
 
 * Logging
 ** Settings
@@ -95,6 +159,7 @@ $LogRotate = 4
 $LogCheckTime = 2  # Seconds
 
 #+END_SRC
+
 ** Logger
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Write-Log {
@@ -102,9 +167,12 @@ function Write-Log {
         [Parameter(Position=0)]
         [string]$Message,
         [string]$Level = 'Verbose',
+        [string]$Exception,
         [string]$Category = 'NotSpecified',
         [string]$CategoryActivity,
-        [string]$CategoryReason
+        [string]$CategoryReason,
+        [string]$CategoryTargetName,
+        [string]$CategoryTargetType
     )
 
     if (-not @('Debug', 'Verbose', 'Warning', 'Error').Contains($Level)) {
@@ -112,21 +180,61 @@ function Write-Log {
         $Level = 'Warning'
     }
 
+    if (
+        (-not @(
+            'NotSpecified',
+            'OpenError',
+            'CloseError',
+            'DeviceError',
+            'DeadlockDetected',
+            'InvalidArgument',
+            'InvalidData',
+            'InvalidOperation',
+            'OperationTimeout',
+            'SyntaxError',
+            'ParserError',
+            'PermissionDenied',
+            'ResourceBusy',
+            'ResourceExists',
+            'ResourceUnavailable',
+            'ReadError',
+            'WriteError',
+            'FromStdErr',
+            'SecurityError',
+            'ProtocolError',
+            'ConnectionError',
+            'AuthenticationError',
+            'LimitsExceeded',
+            'QuotaExceeded',
+            'NotEnabled'
+        ).Contains($Category)) -and ($Level -eq 'Error')
+    ) {
+        Write-Warning ('Write-Log called with unrecognized error category "{0}"' -f $Category)
+        $Category = 'NotSpecified'
+    }
+
     $Line = ('[{0}] {1}: {2}' -f (Get-Date -Format o), $Level, $Message)
 
     Add-Content $CackledaemonLogFile -value $Line
 
     if ($Level -eq 'Debug') {
-        Write-Debug $Line
+        Write-Debug $Message
     } elseif ($Level -eq 'Verbose') {
-        Write-Verbose $Line
+        Write-Verbose $Message
     } elseif ($Level -eq 'Warning') {
-        Write-Warning $Line
+        Write-Warning $Message
     } elseif ($Level -eq 'Error') {
-        Write-Error -Message $Line `
+        if ($Exception) {
+            $Message = ('{0} (Exception: {1})' -f $Message, $Exception)
+        }
+       
+        Write-Error -Message $Message `
+          -Exception $Exception `
           -Category $Category `
           -CategoryActivity $CategoryActivity `
-          -CategoryReason $CategoryReason
+          -CategoryReason $CategoryReason `
+          -CategoryTargetName $CategoryTargetName `
+          -CategoryTargetType $CategoryTargetType
     }
 }
 
@@ -154,88 +262,93 @@ function Write-LogWarning {
 function Write-LogError {
     [Parameter(Position=0)]
     param([string]$Message)
+    [string]$Exception,
+    [string]$Category = 'NotSpecified',
+    [string]$CategoryActivity,
+    [string]$CategoryReason,
+    [string]$CategoryTargetName,
+    [string]$CategoryTargetType
 
-    Write-Log $Message -Level Error
+    Write-Log -Level Error `
+      -Message $Message `
+      -Exception $Exception `
+      -Category $Category `
+      -CategoryActivity $CategoryActivity `
+      -CategoryReason $CategoryReason `
+      -CategoryTargetName $CategoryTargetName `
+      -CategoryTargetType $CategoryTargetType
 }
 
 #+END_SRC
 ** Log Rotation
-For log rotation, we use a PowerShell job. It more or less tries to emulate a
-typical logrotate config - it rotates the log if it's at or over a certain size,
-retains some finite count of log files, and drops the last one if necessary. It
-will do this every configured amount of seconds indefinitely.
+This function more or less tries to emulate a typical logrotate config - it
+rotates the log if it's at or over a certain size, retains some finite count of
+log files, and drops the last one if necessary. It will do this every configured
+amount of seconds indefinitely.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Invoke-LogRotate {
+    [CmdletBinding()]
+    param()
 
-function Get-CackledaemonLogRotateJob {
-    Get-Job -Name 'CackledaemonLogRotateJob' -ErrorAction SilentlyContinue
-}
+    while ($true) {
+        @($CackledaemonLogFile, $EmacsStdoutLogFile, $EmacsStdErrLogFile) | ForEach-Object {
+            $LogFile = $_
 
-function Start-CackledaemonLogRotateJob {
-    if (Get-CackledaemonLogRotateJob | Where-Object { $_.State -eq 'Running' }) {
-        Write-LogError `
-          -Message 'The Cackledaemon log rotate job is already running.' `
-          -Category ResourceExists `
-          -CategoryActivity 'Start-CackledaemonLogRotateJob' `
-          -CategoryReason ResourceExistsException
-    }
+            if ((Get-Item $LogFile).Length -ge $LogSize) {
+                Write-LogVerbose ('Rotating {0}...' -f $LogFile)
 
-    Start-Job `
-    -Name 'CackledaemonLogRotateJob' `
-    -InitializationScript {
-        Import-Module Cackledaemon
-    } `
-    -ScriptBlock {
-        Set-Location $CackledaemonWD
+                ($LogRotate..0) | ForEach-Object {
+                    $Current = $(if ($_) {
+                        '{0}.{1}' -f $LogFile, $_
+                    } else { $LogFile })
 
-        while ($true) {
-            @($CackledaemonLogFile, $EmacsStdoutLogFile, $EmacsStdErrLogFile) | ForEach-Object {
-                $LogFile = $_
+                    $Next = '{0}.{1}' -f $LogFile, ($_ + 1)
 
-                if ((Get-Item $LogFile).Length -ge $LogSize) {
-                    Write-LogVerbose ('Rotating {0}...' -f $LogFile)
+                    if (Test-Path $Current) {
+                        Write-Log ('Copying {0} to {1}...' -f $Current, $Next)
 
-                    ($LogRotate..0) | ForEach-Object {
-                        $Current = $(if ($_) {
-                          '{0}.{1}' -f $LogFile, $_
-                        } else { $LogFile })
-
-                        $Next = '{0}.{1}' -f $LogFile, ($_ + 1)
-
-                        if (Test-Path $Current) {
-                            Write-Log ('Copying {0} to {1}...' -f $Current, $Next)
-
-                            Copy-Item -Path $Current -Destination $Next
-                        }
+                        Copy-Item -Path $Current -Destination $Next
                     }
-
-                    Write-LogVerbose ('Truncating {0}...' -f $LogFile)
-
-                    Clear-Content $LogFile
-
-                    $StaleLogFile = '{0}.{1}' -f ($LogRotate + 1)
-
-                    if (Test-Path $StaleLogFile) {
-                        Write-LogVerbose ('Removing {0}...' -f $StaleLogFile)
-
-                        Remove-Item $StaleLogFile
-                    }
-
-                    Write-LogVerbose 'Done.'
                 }
+
+                Write-LogVerbose ('Truncating {0}...' -f $LogFile)
+
+                Clear-Content $LogFile
+
+                $StaleLogFile = '{0}.{1}' -f ($LogRotate + 1)
+
+                if (Test-Path $StaleLogFile) {
+                    Write-LogVerbose ('Removing {0}...' -f $StaleLogFile)
+
+                    Remove-Item $StaleLogFile
+                }
+
+                Write-LogVerbose 'Done.'
             }
-            Write-LogDebug ('No need to rotate logs. Sleeping for {0} seconds.' -f $LogCheckTime)
-            Start-Sleep -Seconds $LogCheckTime
         }
+        Write-LogDebug ('No need to rotate logs. Sleeping for {0} seconds.' -f $LogCheckTime)
+        Start-Sleep -Seconds $LogCheckTime
     }
 }
 
-function Stop-CackledaemonLogRotateJob {
-    Stop-Job -Name 'CackledaemonLogRotateJob'
+#+END_SRC
+
+We can also use a job to manage log rotation.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Enable-LogRotateJob {
+    [CmdletBinding()]
+    param()
+
+    Enable-CackledaemonJob 'LogRotateJob' { Invoke-LogRotate }
 }
 
-function Remove-CackledaemonLogRotateJob {
-    Remove-Job -Name 'CackledaemonLogRotateJob'
+function Disable-LogRotateJob {
+    [CmdletBinding()]
+    param()
+
+    Disable-CackledaemonJob 'LogRotateJob'
 }
 
 #+END_SRC
@@ -316,7 +429,6 @@ This function launches the Emacs daemon (if it's not running already) with
 sensible parameters and stores process info so we can do basic monitoring.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-
 function Start-EmacsDaemon {
     [CmdletBinding()]
     param ([switch]$Wait)
@@ -403,32 +515,6 @@ function Stop-EmacsDaemon {
 }
 
 #+END_SRC
-** Restart the Emacs Daemon
-From here, restarting is easy - first stop the process, then start it again.
-
-#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-
-function Restart-EmacsDaemon {
-    Stop-EmacsDaemon
-    Start-EmacsDaemon
-}
-#+END_SRC
-* Installation Stuff
-It turns out that installing emacs is unzipping a zipball, running a magic
-program and manually doing a bunch of bullshit. I should just automate
-installing and checking for updates too.
-
-https://lists.gnu.org/archive/html/help-gnu-emacs/2004-03/msg00168.html
-https://www.gnu.org/software/emacs/manual/html_node/emacs/Windows-Startup.html
-
-#+BEGIN_SRC powershell
-(
-    Invoke-WebRequest https://mirrors.syringanetworks.net/gnu/emacs/windows/
-).Links.Href | Where-Object { $_.StartsWith('emacs-') } | ForEach-Object {
-    $_ -match 'emacs-(\d+)/'
-    return $Matches[1]
-}
-#+END_SRC
 * Desktop Applet
 Cackledaemon uses Windows Forms to create a desktop tray applet.
 
@@ -449,17 +535,19 @@ order for this applet to function properly.
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 Add-Type -AssemblyName System.Windows.Forms
 
-function Invoke-CackledaemonApplet {
+function Invoke-Applet {
     [CmdletBinding()]
     param()
 
     # The parent Form
+
     $Global:AppletForm = New-Object System.Windows.Forms.Form
     $AppletForm.Visible = $False
     $AppletForm.WindowState = "minimized"
     $AppletForm.ShowInTaskbar = $False
 
     # The NotifyIcon
+
     $Global:AppletIcon = New-Object System.Windows.Forms.NotifyIcon
     $AppletIcon.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon(
         (Get-Command 'emacs.exe').Path
@@ -468,19 +556,51 @@ function Invoke-CackledaemonApplet {
 
     $NotifyTimeout = 5000
 
+    # Notify the user if something fails
+
+    function Start-InstrumentedBlock {
+        param(
+            [Parameter(Position=0)]
+            [string]$Message,
+
+            [Parameter(Position=1)]
+            [ScriptBlock]$ScriptBlock,
+
+            [System.Windows.Forms.ToolTipIcon]$Icon = [System.Windows.Forms.ToolTipIcon]::Warning
+        )
+
+        try {
+            Invoke-Command -ScriptBlock $ScriptBlock
+        } catch {
+            Write-LogError -Message $_.Exception.Message `
+              -Exception $_.Exception `
+              -Category $_.CategoryInfo.Category `
+              -CategoryActivity $_.CategoryInfo.Activity `
+              -CategoryReason $_.CategoryInfo.Reason `
+              -CategoryTargetName $_.CategoryInfo.TargetName `
+              -CategoryTargetType $_.CategoryInfo.TargetType
+
+            $AppletIcon.BalloonTipIcon = $Icon
+            $AppletIcon.BalloonTipTitle = $Message
+            $AppletIcon.BalloonTipText = $_.Exception
+            $AppletIcon.ShowBalloonTip($NotifyTimeout)
+        }
+
+    }
+
     # The right-click menu
+
     $ContextMenu = New-Object System.Windows.Forms.ContextMenu
     $AppletIcon.ContextMenu = $ContextMenu
 
     # Status items
+
     $DaemonStatusItem = New-Object System.Windows.Forms.MenuItem
     $DaemonStatusItem.Index = 0
-    $DaemonStatusItem.Enabled = $False
     $DaemonStatusItem.Text = '[???] Emacs Daemon'
     $ContextMenu.MenuItems.Add($DaemonStatusItem) | Out-Null
 
     $LogRotateStatusItem = New-Object System.Windows.Forms.MenuItem
-    $LogRotateStatusItem.Enabled = $False
     $LogRotateStatusItem.Text = '[???] Emacs Logs Rotation'
     $ContextMenu.MenuItems.Add($LogRotateStatusItem) | Out-Null
 
@@ -488,15 +608,33 @@ function Invoke-CackledaemonApplet {
         $Process = Get-EmacsProcessFromPidFile
         if ($Process) {
             $DaemonStatusItem.Text = '[RUNNING] Emacs Daemon'
+            $StartDaemonItem.Enabled = $False
+            $StopDaemonItem.Enabled = $True
         } else {
             $DaemonStatusItem.Text = '[STOPPED] Emacs Daemon'
+            $StartDaemonItem.Enabled = $True
+            $StopDaemonItem.Enabled = $False
         }
 
-        $Job = Get-CackledaemonLogRotateJob
-        if (-not $Job) {
-            $LogRotateStatusItem.Text = '[DISABLED] Logs Rotation'
+        $Job = Get-Job -Name 'LogRotateJob' -ErrorAction SilentlyContinue
+
+        if ($Job) {
+            $State = $Job.State.ToUpper()
+
+            if ($State -eq 'RUNNING') {
+                $State = 'ENABLED'
+                $EnableLogRotateJobItem.Enabled = $False
+                $DisableLogRotateJobItem.Enabled = $True
+            } else {
+                $LogRotateStatusItem.Text = ('[{0}] Logs Rotation' -f $State)
+            }
+
+            $EnableLogRotateJobItem.Enabled = $False
+            $DisableLogRotateJobItem.Enabled = $True
         } else {
-            $LogRotateStatusItem.Text = ('[{0}] Logs Rotation' -f $Job.State.ToUpper())
+            $LogRotateStatusItem.Text = '[DISABLED] Logs Rotation'
+            $EnableLogRotateJobItem.Enabled = $True
+            $DisableLogRotateJobItem.Enabled = $False
         }
     })
 
@@ -507,13 +645,8 @@ function Invoke-CackledaemonApplet {
     $StartDaemonItem = New-Object System.Windows.Forms.MenuItem
     $StartDaemonItem.Text = 'Start Emacs Daemon...'
     $StartDaemonItem.add_Click({
-        try {
+        Start-InstrumentedBlock 'Failed to start the Emacs daemon' {
             Start-EmacsDaemon -ErrorAction Stop
-        } catch {
-            $AppletIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
-            $AppletIcon.BalloonTipTitle = 'Failed to start the Emacs daemon'
-            $AppletIcon.BalloonTipText = $_.Exception
-            $AppletIcon.ShowBalloonTip($NotifyTimeout)
         }
     })
     $ContextMenu.MenuItems.Add($StartDaemonItem) | Out-Null
@@ -521,13 +654,8 @@ function Invoke-CackledaemonApplet {
     $StopDaemonItem = New-Object System.Windows.Forms.MenuItem
     $StopDaemonItem.Text = 'Stop Emacs Daemon...'
     $StopDaemonItem.add_Click({
-        try {
+        Start-InstrumentedBlock 'Failed to stop the Emacs daemon' {
             Stop-EmacsDaemon -ErrorAction Stop
-        } catch {
-            $AppletIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
-            $AppletIcon.BalloonTipTitle = 'Failed to stop the Emacs daemon'
-            $AppletIcon.BalloonTipText = $_.Exception
-            $AppletIcon.ShowBalloonTip($NotifyTimeout)
         }
     })
     $ContextMenu.MenuItems.Add($StopDaemonItem) | Out-Null
@@ -535,13 +663,8 @@ function Invoke-CackledaemonApplet {
     $RestartDaemonItem = New-Object System.Windows.Forms.MenuItem
     $RestartDaemonItem.Text = 'Restart Emacs Daemon...'
     $RestartDaemonItem.add_Click({
-        try {
+        Start-InstrumentedBlock 'Failed to restart the Emacs daemon' {
             Restart-EmacsDaemon -ErrorAction Stop
-        } catch {
-            $AppletIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
-            $AppletIcon.BalloonTipTitle = 'Failed to restart the Emacs daemon'
-            $AppletIcon.BalloonTipText = $_.Exception
-            $AppletIcon.ShowBalloonTip($NotifyTimeout)
         }
     })
     $ContextMenu.MenuItems.Add($RestartDaemonItem) | Out-Null
@@ -553,13 +676,8 @@ function Invoke-CackledaemonApplet {
     $EnableLogRotateJobItem = New-Object System.Windows.Forms.MenuItem
     $EnableLogRotateJobItem.Text = 'Enable Log Rotation...'
     $EnableLogRotateJobItem.add_Click({
-        try {
-            Start-CackledaemonLogRotateJob
-        } catch {
-            $AppletIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
-            $AppletIcon.BalloonTipTitle = 'Failed to enable log rotation'
-            $AppletIcon.BalloonTipText = $_.Exception
-            $AppletIcon.ShowBalloonTip($NotifyTimeout)
+        Start-InstrumentedBlock 'Failed to enable log rotation' {
+            Enable-LogRotateJob -ErrorAction Stop
         }
     })
     $ContextMenu.MenuItems.Add($EnableLogRotateJobItem) | Out-Null
@@ -567,14 +685,8 @@ function Invoke-CackledaemonApplet {
     $DisableLogRotateJobItem = New-Object System.Windows.Forms.MenuItem
     $DisableLogRotateJobItem.Text = 'Disable Log Rotation...'
     $DisableLogRotateJobItem.add_Click({
-        try {
-            Stop-CackledaemonLogRotateJob
-            Remove-CackledaemonLogRotateJob
-        } catch {
-            $AppletIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
-            $AppletIcon.BalloonTipTitle = 'Failed to disable log rotation'
-            $AppletIcon.BalloonTipText = $_.Exception
-            $AppletIcon.ShowBalloonTip($NotifyTimeout)
+        Start-InstrumentedBlock 'Failed to disable log rotation' {
+            Disable-LogRotateJob -ErrorAction Stop
         }
     })
     $ContextMenu.MenuItems.Add($DisableLogRotateJobItem) | Out-Null
@@ -584,7 +696,9 @@ function Invoke-CackledaemonApplet {
     $OpenWDItem = New-Object System.Windows.Forms.MenuItem
     $OpenWDItem.Text = 'Open Working Directory...'
     $OpenWDItem.add_Click({
-        Start-Process $CackledaemonWD
+        Start-InstrumentedBlock 'Failed to open working directory' {
+            Start-Process $CackledaemonWD -ErrorAction Stop
+        }
     })
     $ContextMenu.MenuItems.Add($OpenWDItem) | Out-Null
 
@@ -592,14 +706,28 @@ function Invoke-CackledaemonApplet {
 
     $ExitItem = New-Object System.Windows.Forms.MenuItem
     $ExitItem.Text = 'Exit'
+    $ContextMenu.MenuItems.Add($ExitItem) | Out-Null
+
+    # Lifecycle events
+
+    $AppletForm.add_Load({
+        Start-InstrumentedBlock 'Failed to initialize Cackledaemon' {
+            Start-EmacsDaemon -ErrorAction Stop
+            Enable-LogRotateJob -ErrorAction Stop
+        }
+    })
+
     $ExitItem.add_Click({
+        Start-InstrumentedBlock 'Failed to gracefully shut down Cackledaemon' {
+            Stop-EmacsDaemon -ErrorAction Stop
+            Disable-LogRotateJob -ErrorAction Stop
+        }
         $AppletIcon.Visible = $False
         $AppletIcon.Dispose()
         $AppletForm.Close()
         Remove-Variable -Name AppletForm -Scope Global
         Remove-Variable -Name AppletIcon -Scope Global
     })
-    $ContextMenu.MenuItems.Add($ExitItem) | Out-Null
 
 
     $AppletForm.ShowDialog() | Out-Null
@@ -607,44 +735,19 @@ function Invoke-CackledaemonApplet {
 
 #+END_SRC
 
-Code with access to the =$AppletIcon= global variable can send notifications.
-This is generally called asynchronously.
-
-Long term it may turn out that trying to use this function won't actually work
-and I'll just have to do the two member definitions + method call.
-
-#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-function New-Notification {
-    param (
-        [string]$hed,
-        [string]$dek
-    )
-
-    if ($AppletIcon) {
-        $AppletIcon.BalloonTipTitle = $hed
-        $AppletIcon.BalloonTipText = $dek
-        $AppletIcon.ShowBalloonTip(5000)
-    } else {
-        Write-Error -Message "The applet isn't open so we can't send a notification."
-    }
-}
-
-#+END_SRC
 * Exports
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 Export-ModuleMember `
   -Function @(
-      'Get-CackledaemonLogRotateJob',
-      'Start-CackledaemonLogRotateJob',
-      'Stop-CackledaemonLogRotateJob',
-      'Remove-CackledaemonLogRotateJob',
+      'Invoke-LogRotate',
+      'Enable-LogRotateJob',
+      'Disable-LogRotateJob',
       'Start-EmacsDaemon',
       'Get-EmacsDaemon',
       'Stop-EmacsDaemon',
       'Restart-EmacsDaemon',
       'Get-UnmanagedEmacsDaemons',
-      'Get-EmacsProcessFromPidFile',
-      'Invoke-CackledaemonApplet'
+      'Invoke-Applet'
   ) `
   -Variable @(
       'CackledaemonWD'
@@ -688,17 +791,15 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
     # NestedModules = @()
 
     FunctionsToExport = @(
-        'Get-CackledaemonLogRotateJob',
-        'Start-CackledaemonLogRotateJob',
-        'Stop-CackledaemonLogRotateJob',
-        'Remove-CackledaemonLogRotateJob',
+        'Invoke-LogRotate',
+        'Enable-LogRotateJob',
+        'Disable-LogRotateJob',
         'Start-EmacsDaemon',
         'Get-EmacsDaemon',
         'Stop-EmacsDaemon',
         'Restart-EmacsDaemon',
         'Get-UnmanagedEmacsDaemons',
-        'Get-EmacsProcessFromPidFile',
-        'Invoke-CackledaemonApplet'
+        'Invoke-Applet'
     )
 
     CmdletsToExport = @()
