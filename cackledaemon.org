@@ -508,7 +508,7 @@ function Invoke-CackledaemonApplet {
     $StartDaemonItem.Text = 'Start Emacs Daemon...'
     $StartDaemonItem.add_Click({
         try {
-            Start-EmacsDaemon
+            Start-EmacsDaemon -ErrorAction Stop
         } catch {
             $AppletIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
             $AppletIcon.BalloonTipTitle = 'Failed to start the Emacs daemon'
@@ -522,7 +522,7 @@ function Invoke-CackledaemonApplet {
     $StopDaemonItem.Text = 'Stop Emacs Daemon...'
     $StopDaemonItem.add_Click({
         try {
-            Stop-EmacsDaemon
+            Stop-EmacsDaemon -ErrorAction Stop
         } catch {
             $AppletIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
             $AppletIcon.BalloonTipTitle = 'Failed to stop the Emacs daemon'
@@ -536,7 +536,7 @@ function Invoke-CackledaemonApplet {
     $RestartDaemonItem.Text = 'Restart Emacs Daemon...'
     $RestartDaemonItem.add_Click({
         try {
-            Restart-EmacsDaemon
+            Restart-EmacsDaemon -ErrorAction Stop
         } catch {
             $AppletIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
             $AppletIcon.BalloonTipTitle = 'Failed to restart the Emacs daemon'
@@ -591,7 +591,7 @@ function Invoke-CackledaemonApplet {
     $ContextMenu.MenuItems.Add('-') | Out-Null
 
     $ExitItem = New-Object System.Windows.Forms.MenuItem
-    $ExitItem.Text = 'Close Tray Applet'
+    $ExitItem.Text = 'Exit'
     $ExitItem.add_Click({
         $AppletIcon.Visible = $False
         $AppletIcon.Dispose()
