@@ -236,67 +236,135 @@ function Remove-CackledaemonLogRotateJob {
 }
 
 #+END_SRC
-* Notifications
-Cackledaemon sparingly uses balloon tips for simple notifications.
+* Applet
+#+BEGIN_SRC powershell :tangle ./applet.ps1
+Import-Module ./Cackledaemon/Cackledaemon.psm1
 
-The overall strategy is lifted from [[https://mcpmag.com/articles/2017/09/07/creating-a-balloon-tip-notification-using-powershell.aspx][this article]] but wrapped in a class.
+Add-Type -AssemblyName System.Windows.Forms
 
-It's currently broken because the example depends on clicking the icon that this
-creates in the systray, but I want to do the cleanup for when I merely close the
-notification. This will take more work and be an entire goat rope.
+$Global:AppletForm = New-Object System.Windows.Forms.Form
+$AppletForm.Visible = $False
+$AppletForm.WindowState = "minimized"
+$AppletForm.ShowInTaskbar = $False
 
-#+BEGIN_SRC powershell
+$Global:AppletIcon = New-Object System.Windows.Forms.NotifyIcon
+$AppletIcon.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon(
+    (Get-Command 'emacs.exe').Path
+)
+$AppletIcon.Visible = $True
 
-# It's actually appropriate for the icon to be global, because it's actually
-# 1:1 with the icon in the systray, not the notification itself. We should
-# instead refactor this to be a persisted global variable icon like in the
-# example article. It will probably not be necessary to wrap it in a class.
+$AppletIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
+$AppletIcon.BalloonTipTitle = '???'
+$AppletIcon.BalloonTipText = '???'
 
-class NotificationManager : IDisposable {
-    [System.Windows.Forms.NotifyIcon]$NotifyIcon
-    [Int32]$Timeout
+$ContextMenu = New-Object System.Windows.Forms.ContextMenu
+$AppletIcon.ContextMenu = $ContextMenu
 
-    Notification([string]$Hed, [string]$Dek, [Int32]$Timeout) {
-        $this.InitializeIcon($Hed, $Dek)
-        $this.Timeout = $Timeout
+$StatusItem = New-Object System.Windows.Forms.MenuItem
+$StatusItem.Index = 0
+$StatusItem.Enabled = $False
+$StatusItem.Text = '[???] Emacs Daemon'
+$ContextMenu.MenuItems.Add($StatusItem) | Out-Null
+
+$AppletIcon.add_MouseDown({
+    $Process = $(Get-EmacsProcessFromPidFile)
+    If ($Process) {
+        $StatusItem.Text = '[RUNNING] Emacs Daemon'
+    } Else {
+        $StatusItem.Text = '[STOPPED] Emacs Daemon'
     }
+})
 
-    Notification([string]$Hed, [string]$Dek) {
-        $this.InitializeIcon($Hed, $Dek)
-        $this.Timeout = 5000
-    }
-
-    InitializeIcon([string]$Hed, [string]$Dek) {
-        $this.NotifyIcon = New-Object System.Windows.Forms.NotifyIcon
-        $this.NotifyIcon.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon(
-            (Get-Command 'emacs.exe').Path
-        )
-        $this.NotifyIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
-        $this.NotifyIcon.BalloonTipTitle = $Hed
-        $this.NotifyIcon.BalloonTipText = $Dek
-        $this.NotifyIcon.Visible = $true
-    }
-
-    Show() {
-        $SourceId = ("CackledaemonBalloonTipClosedJob{0}" -f ((New-Guid).Guid))
-
-        Register-ObjectEvent -InputObject $this.NotifyIcon -EventName MouseDoubleClick -SourceIdentifier $SourceId -Action {
-            Unregister-Event -SourceIdentifier $SourceId
-            Remove-Job -Name $SourceId
-            $this.Dispose()
-        }
-
-        $this.NotifyIcon.ShowBalloonTip($this.Timeout)
-    }
-
-    Dispose() {
-        $this.NotifyIcon.Dispose()
-    }
+function New-Notification {
+    param (
+        [string]$hed,
+        [string]$dek
+    )
+    $AppletIcon.BalloonTipTitle = $hed
+    $AppletIcon.BalloonTipText = $dek
+    $AppletIcon.ShowBalloonTip(5000)
 }
 
-$Notify = [Notification]::new("hed", "dek", 1000)
+$StartDaemonItem = New-Object System.Windows.Forms.MenuItem
+$StartDaemonItem.Index = 1
+$StartDaemonItem.Text = 'Start Emacs Daemon...'
+$StartDaemonItem.add_Click({
+    Start-Process powershell.exe -ArgumentList @(
+        '-Command',
+        {
+            Import-Module ./Cackledaemon/Cackledaemon.psm1
+            Try {
+                Start-EmacsDaemon
+            } Catch {
+                Write-Error $_.Exception
+            }
+            Read-Host -Prompt '(Press enter to exit)'
+        }
+    );
+})
+$ContextMenu.MenuItems.Add($StartDaemonItem) | Out-Null
 
-$Notify.Show()
+$StopDaemonItem = New-Object System.Windows.Forms.MenuItem
+$StopDaemonItem.Index = 2
+$StopDaemonItem.Text = 'Stop Emacs Daemon...'
+$StopDaemonItem.add_Click({
+    Start-Process powershell.exe -ArgumentList @(
+        '-Command',
+        {
+            Import-Module ./Cackledaemon/Cackledaemon.psm1
+            Try {
+                Stop-EmacsDaemon
+            } Catch {
+                Write-Error $_.Exception
+            }
+            Read-Host -Prompt '(Press enter to exit)'
+        }
+    )
+})
+$ContextMenu.MenuItems.Add($StopDaemonItem) | Out-Null
+
+$RestartDaemonItem = New-Object System.Windows.Forms.MenuItem
+$RestartDaemonItem.Index = 3
+$RestartDaemonItem.Text = 'Restart Emacs Daemon...'
+$RestartDaemonItem.add_Click({
+    Start-Process powershell.exe -ArgumentList @(
+        '-Command',
+        {
+            Import-Module ./Cackledaemon/Cackledaemon.psm1
+            Try {
+                Restart-EmacsDaemon
+            } Catch {
+                Write-Error $_.Exception
+            }
+            Read-Host -Prompt '(Press enter to exit)'
+        }
+    )
+})
+$ContextMenu.MenuItems.Add($RestartDaemonItem) | Out-Null
+
+$OpenWDItem = New-Object System.Windows.Forms.MenuItem
+$OpenWDItem.Index = 4
+$OpenWDItem.Text = 'Open Working Directory...'
+$OpenWDItem.add_Click({
+    Start-Process $CackledaemonWD
+})
+$ContextMenu.MenuItems.Add($OpenWDItem) | Out-Null
+
+$ExitItem = New-Object System.Windows.Forms.MenuItem
+$ExitItem.Index = 5
+$ExitItem.Text = 'Close Icon'
+$ExitItem.add_Click({
+    $AppletIcon.Visible = $False
+    $AppletForm.ShowInTaskbar = $False
+    $AppletIcon.Dispose()
+    $AppletForm.Close()
+    Remove-Variable -Name AppletForm -Scope Global
+    Remove-Variable -Name AppletIcon -Scope Global
+})
+$ContextMenu.MenuItems.Add($ExitItem) | Out-Null
+
+
+$AppletForm.ShowDialog() | Out-Null
 
 #+END_SRC
 * Daemon Management
@@ -316,23 +384,23 @@ save the ID, but storing the entire process object is easier.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 
-PidFile = Join-Path $CackledaemonWD 'DaemonPidFile.json'
+$PidFile = Join-Path $CackledaemonWD 'DaemonPidFile.json'
 
 function Write-EmacsProcessToPidFile {
     param([System.Diagnostics.Process]$Process)
 
-    ($Process).Id | ConvertTo-Json | Out-File PidFile
+    ($Process).Id | ConvertTo-Json | Out-File $PidFile
 }
 
 function Get-EmacsProcessFromPidFile {
-    If (-not (Test-Path PidFile)) {
+    If (-not (Test-Path $PidFile)) {
         return $null
     }
 
-    $Id = (Get-Content PidFile | ConvertFrom-Json)
+    $Id = (Get-Content $PidFile | ConvertFrom-Json)
 
     If (-not $Id) {
-        Remove-Item PidFile
+        Remove-Item $PidFile
         return $null
     }
 
@@ -407,7 +475,7 @@ function Start-EmacsDaemon {
 
     Write-CackledaemonLog "Saving the Emacs daemon's process state..."
 
-    Write-EmacsProcessToPidFile -Process $Process
+    Write-EmacsProcessToPidFile $Process
 
     Write-CackledaemonLog 'Done.'
 
@@ -489,9 +557,8 @@ Export-ModuleMember `
       'Start-EmacsDaemon',
       'Stop-EmacsDaemon',
       'Restart-EmacsDaemon',
-      'Write-EmacsProcessToPidFile',
-      'Get-EmacsProcessFromPidFile',
-      'Get-UnmanagedEmacsDaemons'
+      'Get-UnmanagedEmacsDaemons',
+      'Get-EmacsProcessFromPidFile'
   ) `
   -Variable @(
       'CackledaemonWD'
@@ -544,7 +611,7 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
         'Write-CackledaemonLog'
         'Start-CackledaemonLogRotateJob'
         'Get-EmacsProcessFromPidFile'
-        'Write-EmacsProcessToPidFile'
+        'Get-UnmanagedEmacsDaemons'
         'Start-EmacsDaemon'
         'Stop-EmacsDaemon'
         'Restart-EmacsDaemon'
