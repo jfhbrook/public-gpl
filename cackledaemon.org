@@ -77,9 +77,6 @@ we use a folder inside =APPDATA=.
 $CackledaemonWD = Join-Path $env:APPDATA 'cackledaemon'
 $CackledaemonConfigLocation = Join-Path $CackledaemonWD 'Configuration.ps1'
 
-#+END_SRC
-
-#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function New-CackledaemonWD {
     New-Item -Path $CackledaemonWD -ItemType directory
 
@@ -103,6 +100,44 @@ $LogCheckTime = 60  # Seconds
 
 # Applet Settings
 $NotifyTimeout = 5000
+#+END_SRC
+* Installation
+#+BEGIN_SRC powershell :tangle ./playground.ps1
+class Version : IComparable {
+    [int64]$Major
+    [int64]$Minor
+
+    Version([int64]$Major, [int64]$Minor) {
+        $this.Major = $Major
+        $this.Minor = $Minor
+    }
+
+    [int]CompareTo([object]$other) {
+        if ($other -eq $null) {
+            return 1
+        }
+        $other = [Version]$other
+
+        if ($this.Major -gt $other.Major) {
+            return 1
+        } elseif ($this.Major -lt $other.Major) {
+            return -1
+        } elseif ($this.Minor -gt $other.Minor) {
+            return 1
+        } elseif ($this.Minor -lt $other.Minor) {
+            return -1
+        } else {
+            return 0
+        }
+    }
+}
+
+function Get-EmacsVersion {
+    if ((emacs.exe --version)[0] -match '^GNU Emacs (\d+)\.(\d+)$') {
+        New-Object Version $Matches[1], $Matches[2]
+    }
+}
+
 #+END_SRC
 * Job Management
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
