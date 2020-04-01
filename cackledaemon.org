@@ -156,7 +156,7 @@ $EmacsStdOutLogFile = Join-Path $CackledaemonWD 'EmacsStdout.log'
 $EmacsStdErrLogFile = Join-Path $CackledaemonWD 'EmacsStderr.log'
 $LogSize = 1mb
 $LogRotate = 4
-$LogCheckTime = 2  # Seconds
+$LogCheckTime = 60  # Seconds
 
 #+END_SRC
 
@@ -623,12 +623,9 @@ function Invoke-Applet {
 
             if ($State -eq 'RUNNING') {
                 $State = 'ENABLED'
-                $EnableLogRotateJobItem.Enabled = $False
-                $DisableLogRotateJobItem.Enabled = $True
-            } else {
-                $LogRotateStatusItem.Text = ('[{0}] Logs Rotation' -f $State)
             }
 
+            $LogRotateStatusItem.Text = ('[{0}] Logs Rotation' -f $State)
             $EnableLogRotateJobItem.Enabled = $False
             $DisableLogRotateJobItem.Enabled = $True
         } else {
@@ -760,7 +757,7 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
 @{
     RootModule = 'Cackledaemon.psm1'
 
-    ModuleVersion = '0.0.12'
+    ModuleVersion = '0.0.14'
     GUID = '10d14360-ee5c-4363-bfe8-f4116a8ce764'
 
     Author = 'Josh Holbrook'
