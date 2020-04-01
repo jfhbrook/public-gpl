@@ -941,7 +941,7 @@ newer.
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 # Copyright 2020 Josh Holbrook
 #
-# This file is part of Cackledaemon.
+# This file is part of Cackledaemon and not a part of Emacs.
 #
 # Cackledaemon is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
