@@ -103,7 +103,7 @@ def g_shell_unquote(quoted_string):
     quotes are handled, as are escapes including escaped newlines.
 
     Shell quoting rules are a bit strange. Single quotes preserve the literal
-    string exactly. escape sequences are not allowed; not even \\' - if you
+    string exactly. Escape sequences are not allowed; not even \\' - if you
     want a ' in the quoted text, you have to do something like 'foo\\''bar'.
     Double quotes allow $, `, ", \\, and newline to be escaped with backslash.
     Otherwise double quotes preserve things literally.
@@ -318,7 +318,7 @@ def g_shell_parse_argv(command_line):
 
     Parses a command line into an argument vector, using the logic in GLib's
     gshell.c, which is intended to work in much the same way the shell would,
-    but without many of the xpansions the shell would perform (variable
+    but without many of the expansions the shell would perform (variable
     expansion, globs, operators, filename expansion, etc. are not supported).
     The results are defined to be the same as those you would get from a UNIX98
     /bin/sh, as long as the input contains none of the unsupported shell
