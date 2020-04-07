@@ -2,7 +2,7 @@
 #+AUTHOR: Josh Holbrook
 #+OPTIONS: tags:nil toc:nil
 
-* Cackledaemon :export:
+* Introduction :export:
 #+BEGIN_QUOTE
 Oh-ho-ho! Swirly Photoshop magic! I bet this thing could release some serious
 cackledemons!
@@ -69,12 +69,13 @@ starting, stopping and restarting the Emacs daemon, functions and jobs for log
 management and rotation, and a tray icon for a lil' point-and-click action and
 notifications for if/when Emacs exits unexpectedly.
 
-* Working Directory
-Cackledaemon needs a place to store logs and process metadata. For this purpose,
-we use a folder inside =APPDATA=.
+* Configuration and State
+** Working Directory
+Cackledaemon needs a place to store configurations, logs and process metadata.
+For this purpose, we create a folder at =$Env:AppData\cackledaemon=.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-$CackledaemonWD = Join-Path $env:APPDATA 'cackledaemon'
+$CackledaemonWD = Join-Path $Env:AppData 'cackledaemon'
 $CackledaemonConfigLocation = Join-Path $CackledaemonWD 'Configuration.ps1'
 
 function New-CackledaemonWD {
@@ -88,8 +89,17 @@ function New-CackledaemonWD {
 }
 
 #+END_SRC
-* Configuration
+** Base Config File
+Most Cackledaemon settings live in ~Configuration.ps1~. These settings can be
+loaded by sourcing the script.
+
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/DefaultConfiguration.ps1
+# Installer Settings
+$WorkspaceDirectory = Join-Path $CackledaemonWD 'Workspace'
+$EmacsDownloadsEndpoint = 'https://ftp.gnu.org/gnu/emacs/windows/'
+$EmacsInstallLocation = Join-Path $Env:ProgramFiles 'emacs'
+$StartMenuPath = Join-Path $Env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
+
 # Logging Settings
 $CackledaemonLogFile = Join-Path $CackledaemonWD 'Cackledaemon.log'
 $EmacsStdOutLogFile = Join-Path $CackledaemonWD 'EmacsStdout.log'
@@ -101,187 +111,102 @@ $LogCheckTime = 60  # Seconds
 # Applet Settings
 $NotifyTimeout = 5000
 #+END_SRC
-* Installation
-#+BEGIN_SRC powershell :tangle ./playground.ps1
-class Version : IComparable {
-    [int64]$Major
-    [int64]$Minor
 
-    Version([int64]$Major, [int64]$Minor) {
-        $this.Major = $Major
-        $this.Minor = $Minor
-    }
 
-    [int]CompareTo([object]$Other) {
-        if ($Other -eq $null) {
-            return 1
-        }
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/shortcuts.csv
+** Start Menu Shortcuts Config
+The desired state of Start menu shortcuts are stored in a CSV file. Note that
+the ~TYPE~ header is necessary, and the ~$ArgumentList~ is double-encoded as a
+JSON array.
 
-        $Other = [Version]$Other
+#+BEGIN_SRC csv :tangle ./Cackledaemon/Shortcuts.csv
+#TYPE ShortcutCsvRecord
+"ShortcutName","EmacsBinaryName","ArgumentList","Description"
+Emacs Client,emacsclientw.exe,"[]",Open the Emacs Client
+#+END_SRC
 
-        if ($this.Major -gt $Other.Major) {
-            return 1
-        } elseif ($this.Major -lt $Other.Major) {
-            return -1
-        } elseif ($this.Minor -gt $Other.Minor) {
-            return 1
-        } elseif ($this.Minor -lt $Other.Minor) {
-            return -1
-        } else {
-            return 0
-        }
-    }
-}
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+class ShortcutCsvRecord {
+    [string]$ShortcutName
+    [string]$EmacsBinaryName
+    [string]$ArgumentList
+    [string]$Description
 
-function Get-EmacsVersion {
-    if ((emacs.exe --version)[0] -match '^GNU Emacs (\d+)\.(\d+)$') {
-        New-Object Version $Matches[1], $Matches[2]
+    ShortcutCsvRecord(
+        [string]$ShortcutName,
+        [string]$EmacsBinaryName,
+        [string]$ArgumentList,
+        [string]$Description
+    ) {
+        $this.ShortcutName = $ShortcutName
+        $this.EmacsBinaryName = $EmacsBinaryName
+        $this.ArgumentList = $ArgumentList
+        $this.Description = $Description
     }
 }
 
-$EmacsWindowsEndpoint = 'https://ftp.gnu.org/gnu/emacs/windows/'
+class ShortcutRecord {
+    [string]$ShortcutName
+    [string]$EmacsBinaryName
+    [string[]]$ArgumentList
+    [string]$Description
 
-class Download: IComparable {
-    [Version]$Version
-    [string]$Href
-
-    Download([int64]$Major, [int64]$Minor, [string]$Href) {
-        $this.Version = New-Object Version $Major, $Minor
-        $this.Href = $Href
-    }
-
-    [int]CompareTo([object]$Other) {
-        if ($Other -eq $null) {
-            return 1
-        }
-
-        $Other = [Download]$Other
-
-        return $this.Version.CompareTo($Other.Version)
+    ShortcutRecord(
+        [string]$ShortcutName,
+        [string]$EmacsBinaryName,
+        [string[]]$ArgumentList,
+        [string]$Description
+    ) {
+        $this.ShortcutName = $ShortcutName
+        $this.EmacsBinaryName = $EmacsBinaryName
+        $this.ArgumentList = $ArgumentList
+        $this.Description = $Description
     }
 }
 
-function Get-AvailableEmacsDownloads {
-    (Invoke-WebRequest $EmacsWindowsEndpoint).Links | ForEach-Object {
-        if ($_.href -match '^emacs-(\d+)/$') {
-            $MajorPathPart = $_.href
-            (Invoke-WebRequest ($EmacsWindowsEndpoint + $_.href)).Links | ForEach-Object {
-                 if ($_.href -match '^emacs-(\d+)\.(\d+)-x86_64\.zip$') {
-                     $Href = $EmacsWindowsEndpoint + $MajorPathPart + $_.href
-                     return New-Object Download $Matches[1], $Matches[2], $Href
-                 }
-            }
-        }
-    } | Where-Object {$_}
-}
-
-function Get-LatestEmacsDownload {
-    (Get-AvailableEmacsDownloads | Measure-Object -Maximum).Maximum
-}
-
-class Workspace : IDisposable {
-    [System.IO.DirectoryInfo]$Root
-    [System.IO.DirectoryInfo]$Archives
-    [System.IO.DirectoryInfo]$Installs
-    [System.IO.DirectoryInfo]$Backups
-
-    Workspace([string]$Path) {
-        $ArchivesPath = Join-Path $Path 'archives'
-        $InstallsPath = Join-Path $Path 'installs'
-        $BackupsPath = Join-Path $Path 'backups'
-
-        if (Test-Path $Path) {
-            $this.Root = Get-Item $Path
-        } else {
-            $this.Root = New-Item -Type Directory $Path
-        }
-        if (Test-Path $ArchivesPath) {
-            $this.Archives = Get-Item $ArchivesPath
-        } else {
-            $this.Archives = New-Item -Type Directory $ArchivesPath
-        }
-        if (Test-Path $InstallsPath) {
-            $this.Installs = Get-Item $InstallsPath
-        } else {
-            $this.Installs = New-Item -Type Directory $InstallsPath
-        }
-        if (Test-Path $BackupsPath) {
-            $this.Backups = Get-Item $BackupsPath
-        } else {
-            $this.Backups = New-Item -Type Directory $BackupsPath
-        }
-    }
-
-    Dispose() {
-        Remove-Item $this.Root -Recurse
+function Get-ShortcutsConfig {
+    Import-Csv -Path (Join-Path $CackledaemonWD './Shortcuts.csv') | ForEach-Object {
+        New-Object ShortcutRecord $_.ShortcutName, $_.EmacsBinaryName, ($_.ArgumentList | ConvertFrom-Json), $_.Description
     }
 }
 
-function New-TempWorkspace {
-    $TempDir = Join-Path `
-      ([System.IO.Path]::GetTempPath()) `
-      ('cackledaemon-{0}' -f (New-GUID))
+#+END_SRC
+** File Type Associations Config
+Desired file type associations are also stored in a CSV file. Note that the
+~TYPE~ header is necessary. The format of the command string is detailed in [[https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/ftype][the
+documentation for the ~ftype~ batch command.]]
 
-    return New-Object Workspace $TempDir
-}
+#+BEGIN_SRC csv :tangle ./Cackledaemon/Associations.csv
+#Type FileTypeAssociationCsvRecord
+"FileType","Extension","Command"
+Gnu.Emacs.Org,.org,emacsclientw.exe -c %1
+Gnu.Emacs.ELisp,.el,emacsclientw.exe -c %1
+#+END_SRC
 
-function Remove-Workspace {
-    param(
-        [Workspace]$Workspace
-    )
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+class FileTypeAssociationRecord {
+    [string]$FileType
+    [string]$Extension
+    [string]$Command
 
-    $Workspace.Dispose()
-}
-
-$Workspace = New-TempWorkspace
-
-$EmacsInstallLocation = Join-Path $Env:ProgramFiles 'emacs'
-
-function New-EmacsArchive {
-    param(
-        [Parameter(Position=0)]
-        [Download]$Download
-    )
-
-    $Archive = Join-Path $Workspace.Archives.FullName (Split-Path $Download.Href -Leaf)
-
-    Invoke-WebRequest `
-      -Uri $Download.Href `
-      -OutFile $Archive
-
-    return Get-Item $Archive
-}
-
-function Extract-EmacsArchive {
-    param(
-        [System.IO.FileInfo]$Archive
-    )
-    $Source = $Archive.FullName
-
-    $Destination = Join-Path $Workspace.Installs.FullName $Archive.BaseName
-
-    Expand-Archive -Path $Source -DestinationPath $Destination
-
-    return Get-Item $Destination
-}
-
-function Update-EmacsInstall {
-    param(
-        [System.IO.DirectoryInfo]$Source
-    )
-
-    $Destination = $EmacsInstallLocation
-    $Backup = Join-Path $Workspace.Backups.FullName ('emacs-{0}' -f (Get-Date -Format 'o'))
-
-    if (Test-Path $Destination -ErrorAction Stop) {
-        Copy-Item $Destination $Backup -ErrorAction Stop
-        Remove-Item $Destination -ErrorAction Stop
+    FileTypeAssociationRecord(
+        [string]$FileType,
+        [string]$Extension,
+        [string]$Command
+    ) {
+        $this.FileType = $FileType
+        $this.Extension = $Extension
+        $this.Command = $Command
     }
+}
 
-    Move-Item $Source $Destination -ErrorAction Stop
-    Remove-Item $Backup
+class FileTypeAssociationCsvRecord : FileTypeAssociationRecord {
+}
 
-    return Get-Item $Destination
+function Get-FileTypeAssociationsConfig {
+    ImportCsv -Path (Join-Path $CackledaemonWD './Associations.csv') | ForEach-Object {
+        [FileTypeAssociationRecord]$_
+    }
 }
 
 #+END_SRC
@@ -538,16 +463,626 @@ function Disable-LogRotateJob {
 }
 
 #+END_SRC
+* Installing Emacs
+** Gotchas and Caveats
+On a certain level, installing Emacs is a matter of downloading an official zip
+file and unpacking it into the system's ~Program Files~ directory. Beyond that,
+we can register executables with Windows, set some environment variables,
+populate the Start menu, and configure file type associations.
+
+Emacs is fundamentally designed to run on Unix-like systems, meaning that
+sometimes the way Windows works violates Emacs' base expectations. This
+introduces a few surprises and caveats. Most of these are handled by
+Cackledaemon and the details can be found under the relevant sub-headings.
+Others, however, are left as an exercise for the reader.
+
+First, ~emacs.exe~ and ~emacsclient.exe~ are written such that they write to
+stdout/stderr, but Windows will run programs that try to do this with a
+console. To work around this, Emacs ships with ~runemacs.exe~ and
+~emacsclientw.exe~, respectively, which wrap the standard entry points in
+Windows-specific ones.
+
+Given no other signal, Emacs will open in =/WINDOWS/system32= by default. There
+are a number of ways around this:
+
+- Open Emacs inside of a PowerShell or cmd prompt - in this case, Emacs will
+  open in the current working directory
+- Add a =cd= call to your Emacs config, which will change Emacs' working
+  directory whenever it is loaded
+- Set the =default-directory= variable in your Emacs config. This will cause
+  Emacs to default to opening in that directory when there isn't an associated
+  current working directory
+- If opening Emacs with a shortcut, the starting directory of that shortcut may
+  be set to the desired directory
+
+File associations - that is, what programs Windows will use to try to open
+things like org files and so on - can only be made with ~.exe~, ~.bat~, ~.com~
+and ~.pif~ files. This means that if you want to have files opened by Emacs
+given specific CLI flags via the "Open With..." menu - for example - that you
+will either need to write compiled code or batch scripts.
+
+For more details, refer to:
+
+- [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Windows-Startup.html][Windows Startup]] in the Emacs manual
+- [[https://git.savannah.gnu.org/cgit/emacs.git/tree/nt/][The nt directory]] in Emacs' source tree, particularly ~runemacs.c~ and ~addpm.c~
+- [[https://www.emacswiki.org/emacs/MsWindowsInstallation][MS Windows Installation]] in the Emacs wiki
+- [[https://www.emacswiki.org/emacs/EmacsMsWindowsIntegration][Emacs MS Windows Integration]] in the Emacs wiki
+
+** Checking if Emacs is Already Installed
+One check we can do to see if Emacs is already installed is to see if
+~emacs.exe~ is in the expected location given a configured
+=$EmacsInstallLocation=.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Test-EmacsExe {
+    . $CackledaemonConfigLocation
+
+    Test-Item (Join-Path $EmacsInstallLocation 'bin' 'emacs.exe')
+}
+
+#+END_SRC
+** Versions
+Emacs exposes versions of the form ~{major).{minor}~. We use a class to
+represent these versions and to do basic comparisons between them.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+class Version : IComparable {
+    [int64]$Major
+    [int64]$Minor
+
+    Version([int64]$Major, [int64]$Minor) {
+        $this.Major = $Major
+        $this.Minor = $Minor
+    }
+
+    [int]CompareTo([object]$Other) {
+        if ($Other -eq $null) {
+            return 1
+        }
+
+        $Other = [Version]$Other
+
+        if ($this.Major -gt $Other.Major) {
+            return 1
+        } elseif ($this.Major -lt $Other.Major) {
+            return -1
+        } elseif ($this.Minor -gt $Other.Minor) {
+            return 1
+        } elseif ($this.Minor -lt $Other.Minor) {
+            return -1
+        } else {
+            return 0
+        }
+    }
+}
+
+#+END_SRC
+
+The Emacs bin will report versions if installed. We can grep them out, and
+otherwise fall back to reporting a null version, which will usually do the right
+thing when compared to a =Version= instance.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Get-EmacsExeVersion {
+    if (Get-Command 'emacs.exe' -ErrorAction SilentlyContinue) {
+        if ((emacs.exe --version)[0] -match '^GNU Emacs (\d+)\.(\d+)$') {
+            New-Object Version $Matches[1], $Matches[2]
+        }
+    }
+}
+
+#+END_SRC
+** Official Downloads
+Emacs hosts downloads on an Apache webserver running [[https://trisquel.info/][Trisquel Linux]], which I
+personally find charming. It turns out that Apache directory listings can be
+casually scraped by PowerShell.
+
+Note that Download isn't comparable because there isn't a use case for comparing
+downloads with other downloads, and while the IComparable interface is game to
+compare disparate objects, PowerShell is not. Therefore, we always compare the
+Version properties.
+
+It's also worth noting that Cackledaemon only attempts to handle native Windows
+x86_64 builds. The first major version of Emacs with such builds is Emacs 25.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+class Download {
+    [Version]$Version
+    [string]$Href
+
+    Download([int64]$Major, [int64]$Minor, [string]$Href) {
+        $this.Version = New-Object Version $Major, $Minor
+        $this.Href = $Href
+    }
+}
+
+function Get-EmacsDownload {
+    . $CackledaemonConfigLocation
+
+    Write-LogInfo ('Checking {0} for available Emacs versions...' -f $EmacsDownloadsEndpoint)
+    (Invoke-WebRequest $EmacDownloadsEndpoint).Links | ForEach-Object {
+        if ($_.href -match '^emacs-(\d+)/$') {
+            $MajorPathPart = $_.href
+            (Invoke-WebRequest ($EmacDownloadsEndpoint + $_.href)).Links | ForEach-Object {
+                 if ($_.href -match '^emacs-(\d+)\.(\d+)-x86_64\.zip$') {
+                     $Href = $EmacsDownloadsEndpoint + $MajorPathPart + $_.href
+                     return New-Object Download $Matches[1], $Matches[2], $Href
+                 }
+            }
+        }
+    } | Where-Object {$_}
+}
+
+function Get-LatestEmacsDownload {
+    (Get-EmacsDownload | Measure-Object -Maximum).Maximum
+}
+
+#+END_SRC
+** Workspace Management
+In order to effectively download, unpack and install Emacs downloads, we need a
+directory to store everything. We use a class to represent the components of the
+required directory structure and some helper functions to manage setup and teardown.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+class Workspace {
+    [System.IO.DirectoryInfo]$Root
+    [System.IO.DirectoryInfo]$Archives
+    [System.IO.DirectoryInfo]$Installs
+    [System.IO.DirectoryInfo]$Backups
+
+    Workspace([string]$Path) {
+        $ArchivesPath = Join-Path $Path 'archives'
+        $InstallsPath = Join-Path $Path 'installs'
+        $BackupsPath = Join-Path $Path 'backups'
+
+        $this.Root = Get-Item $Path
+        $this.Archives = Get-Item $ArchivesPath
+        $this.Installs = Get-Item $InstallsPath
+        $this.Backups = Get-Item $BackupsPath
+    }
+
+    GetKey([Version]$Version) {
+        'emacs-{0}.{1}-x86_64.zip' -f $Version.Major, $Version.Minor
+    }
+
+    GetArchivePath([Version]$Version) {
+        Join-Path $this.Archives $this.GetKey($Version)
+    }
+
+    TestArchive([Version]$Version) {
+        Test-Item $this.GetArchivePath($Version)
+    }
+
+    GetArchive([Version]$Version) {
+        Get-Item $this.GetArchivePath($Version)
+    }
+
+    GetInstallPath([Version]$Version) {
+        Join-Path $this.Installs $this.GetKey($Version)
+    }
+
+    TestInstall([Version]$Version) {
+        Test-Item $this.GetInstallPath($Version)
+    }
+
+    GetInstall([Version]$Version) {
+        Get-Item $this.GetInstallPath($Version)
+    }
+
+    Clear() {
+        $this.Root = $null
+        $this.Archives = $null
+        $this.Installs = $null
+        $this.Backups = $null
+    }
+}
+
+function Test-Workspace {
+    . $CackledaemonConfigLocation
+
+    Test-Item $WorkspaceDirectory
+}
+
+function Get-Workspace {
+    . $CackledaemonConfigLocation
+
+    return New-Object Workspace $WorkspaceDirectory
+}
+
+function New-Workspace {
+    . $CackledaemonConfigLocation
+
+    $ArchivesPath = Join-Path $WorkspaceDirectory 'archives'
+    $InstallsPath = Join-Path $WorkspaceDirectory 'installs'
+    $BackupsPath = Join-Path $WorkspaceDirectory 'backups'
+
+    New-Item -Type Directory $ArchivesPath
+    New-Item -Type Directory $InstallsPath
+    New-Item -Type Directory $BackupsPath
+
+    return New-Object Workspace $WorkspaceDirectory
+}
+
+function Remove-Workspace {
+    $Workspace = Get-Workspace
+
+    Remove-Item $Workspace.Root -Recurse
+}
+
+#+END_SRC
+
+** Downloading and Extracting
+Given a workspace and an upstream download, we can use =Invoke-WebRequest= to
+download the zip files, =Extract-Archive= to unpack them and some filesystem
+operations to put them in place.
+
+Note that by default this installs Emacs in ~Program Files~ and so will need
+Administrator privileges.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function New-EmacsArchive {
+    param(
+        [Parameter(Position=0)]
+        [Download]$Download
+    )
+
+    $Workspace = Get-Workspace
+
+    $Archive = Join-Path $Workspace.Archives.FullName (Split-Path $Download.Href -Leaf)
+
+    Invoke-WebRequest `
+      -Uri $Download.Href `
+      -OutFile $Archive
+
+    return Get-Item $Archive
+}
+
+function Extract-EmacsArchive {
+    param(
+        [Parameter(Position=0)]
+        [System.IO.FileInfo]$Archive
+    )
+
+    $Workspace = Get-Workspace
+
+    $Source = $Archive.FullName
+
+    $Destination = Join-Path $Workspace.Installs.FullName $Archive.BaseName
+
+    Expand-Archive -Path $Source -DestinationPath $Destination
+
+    return Get-Item $Destination
+}
+
+function Update-EmacsInstall {
+    param(
+        [System.IO.DirectoryInfo]$Source
+        [string]$Path
+    )
+
+    if (-not $Source) {
+        $Source = Get-Item -ErrorAction Stop $Path
+    }
+
+    . $CackledaemonConfigLocation
+
+    $Backup = Join-Path $Workspace.Backups.FullName ('emacs-{0}' -f (Get-Date -Format 'o'))
+
+    if (Test-Path $EmacsInstallLocation -ErrorAction Stop) {
+        Copy-Item $EmacsInstallLocation $Backup -ErrorAction Stop
+        Remove-Item $EmacsInstallLocation -ErrorAction Stop
+    }
+
+    Move-Item $Source $EmacsInstallLocation -ErrorAction Stop
+    Remove-Item $Backup
+
+    return Get-Item $EmacsInstallLocation
+}
+
+#+END_SRC
+** Environment Variables
+*** PATH Environment Variable
+As in Linux and OSX, Windows uses a ~Path~ variable to resolve commands in cmd
+and PowerShell. The ~Path~ environment variable can be set for either the
+current user or system-wide. We implement the user version because it doesn't
+require admin privileges and leaves this as a choice for individual users.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+
+function Set-EmacsPathEnvVariable {
+    param(
+        [str]$Path
+    )
+
+    $ExistingEmacs = Get-Command 'emacs.exe' -SilentlyContinue
+
+    if ($ExistingEmacs) {
+        $ExistingEmacsBinDir = Split-Path $ExistingEmacs.Source -Parent
+    }
+
+    if ($ExistingEmacsBinDir -eq $Path) {
+        Write-Warning 'An unmanaged Emacs is already installed at ' +
+        ('{0} - this may cause unexpected behavior. ' -f $ExistingEmacsBinDir)
+    }
+
+    $PathProperty = (Get-ItemProperty -Path 'HKCU:\Environment' -Name 'Path')
+    $PathParts = $PathProperty.Path.Split(';')
+
+    $ExistingEmacsPathPart = $PathParts | Where-Object { $_ -eq $Path }
+
+    if ($ExistingEmacsPathPart) {
+        Write-Verbose 'Emacs is already in the PATH - no changes necessary.'
+    } else {
+        $PathParts += $Path
+        $PathProperty.Path = $PathParts -Join ';'
+        Set-ItemProperty -Path 'HKCU:\Environment' -Name 'Path' $PathProperty
+    }
+}
+
+#+END_SRC
+*** HOME Environment Variable
+Emacs generally tries to find its init files in =$HOME/.emacs.d= but Windows
+doesn't have a 1:1 concept of a home directory and the environment variable is
+typically not set. Emacs for historical reasons defaults to using =$Env:AppDir=,
+but in practice most people want to set =$Env:HOME= to =$Env:UserProfile=.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Set-HomeEnvVariable {
+    Set-ItemProperty -Path 'HKCU:\Environment' -Name 'HOME' $Env:UserProfile
+}
+
+#+END_SRC
+** App Paths Registry Keys
+Windows, in addition to the concept of a user ~Path~, also has the concept of
+[[https://docs.microsoft.com/en-us/windows/win32/shell/app-registration][app paths]]. These paths are used so that tools like the run command - and
+anything using [[https://docs.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shellexecuteexa][the ShellExecuteEx API]] - can find the associated programs.
+
+The relevant registry entries are in ~HKEY_LOCAL_MACHINE~ and need to be set
+as an administrator.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Set-EmacsAppPathRegistryKeys {
+    param(
+        [string]$Path
+    )
+
+    @('emacs.exe', 'runemacs.exe', 'emacsclient.exe', 'emacsclientw.exe') | ForEach-Object {
+        $RegistryPath = Join-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths' $_
+        $BinPath = Join-Path $Path $_
+
+        if (Test-Path $BinPath) {
+            Set-Item -Path $RegistryPath -Value $BinPath
+            Set-ItemProperty -Path $RegistryPath -Name Path -Value $Path
+        } else {
+            Write-Error -Message ("{0} doesn't exist - refusing to write this to the registry." -f $BinPath) `
+              -Category ObjectNotFound `
+              -CategoryActivity 'Set-EmacsAppPathRegistryKeys' `
+              -CategoryReason 'ItemNotFoundException'`
+              -CategoryTargetName $BinPath `
+              -CategoryTargetType 'string'
+        }
+
+    }
+}
+
+#+END_SRC
+** Start Menu and Shortcuts
+*** Start Menu Items
+Emacs's ~addpm.exe~ creates a shortcut to ~emacs.exe~ in a sub-folder called
+"Gnu Emacs". The default Start menu path follows this convention.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Get-StartMenuItems {
+    . $CackledaemonConfigLocation
+    Get-ChildItem -Path $StartMenuPath
+}
+
+#+END_SRC
+*** Creating Shortcuts
+We can create a shortcut by using [[https://docs.microsoft.com/en-us/windows/win32/com/component-object-model--com--portal][COM]] to interact with [[https://en.wikipedia.org/wiki/Windows_Script_Host][Windows Script Host.]]
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Get-WShell {
+    if (-not $WShell) {
+        $Global:WShell = New-Object -comObject WScript.Shell
+    }
+
+    return $WShell
+}
+
+function Set-Shortcut {
+    param(
+        [string]$ShortcutPath,
+        [string]$TargetPath,
+        [string[]]$Argumentlist = @(),
+        [string]$WorkingDirectory = $Env:USERPROFILE,
+        [string]$Description
+    )
+
+    $Shell = Get-WShell
+
+    $Shortcut = $Shell.CreateShortcut($ShortcutPath)
+    $Shortcut.TargetPath = $TargetPath
+    $Shortcut.Arguments = $ArgumentList
+    $Shortcut.WorkingDirectory = $WorkingDirectory
+   
+    if ($Description) {
+        $Shortcut.Description = $Description
+    }
+
+    $Shortcut.Save()
+}
+
+#+END_SRC
+*** Installation
+Given a shortcuts config, we can "install" them by comparing the shortcuts in
+the directory with the ones that are configured, cleaning up the ones we don't
+want and setting the rest.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Install-Shortcuts {
+    $Config = Get-ShortcutsConfig
+    $CurrentItems = Get-StartMenuItems
+    $DesiredShortcutNames = $Config | ForEach-Object { $_.ShortcutName }
+
+    $CurrentItems | ForEach-Object {
+        Split-Path $_ -Leaf
+    } | Where-Object {
+        -not $DesiredFilenames.Contains($_)
+    } | ForEach-Object {
+        Remove-Item $_
+    }
+
+    $Config | ForEach-Object {
+        Set-Shortcut `
+          -ShortcutPath (Join-Path $StartMenuPath $_.ShortcutName) `
+          -TargetPath (Join-Path $EmacsInstallLocation $_.EmacsBinaryName) `
+          -ArgumentList $_.ArgumentList `
+          -Description $_.Description
+    }
+}
+
+#+END_SRC
+** File Type Associations
+File type associations in Windows are [[https://twitter.com/jfhbrook/status/1245917952316039169]["complicated"]] and the documentation for
+them isn't great.
+
+At the user level, Explorer manages a bunch of registry settings that encode
+which applications a user has associated with a file type via the "Open With"
+dialogs, as well as what they've picked as the default for opening that file.
+The structure of these registry settings is complicated and research has
+indicated that Microsoft would just as soon not have programs messing with these
+settings.
+
+However, on the system level, the batch commands [[https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/ftype][ftype]] and [[https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/assoc][assoc]] can be used to
+set file type associations. These associations can be used to set defaults for
+Explore for when a user hasn't interacted with them. ~assoc~ associates an
+extension with a human-readable file type, and ~ftype~ connects that file type
+with a command template.
+
+This means that while the config for this is managed in
+a single table, Windows actually manages these in two separate collections - one
+for each command. The upshot is that it's possible to have a file type
+registered with ~assoc~ but not in ~ftype~, and vice versa. In practice,
+however, having one of these fields as null isn't very useful, so we don't
+support it.
+
+Additionally, while both of these commands support unsetting a key, we never
+attempt to do any cleanup since it's assumed that an unused association is
+non-harmful, while removing a used association on accident is very bad.
+
+Note that these commands must be ran with Administrator privileges.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Install-FileTypeAssociations {
+    Get-FileTypeAssociationsConfig | ForEach-Object {
+        cmd /c assoc ("{0}={1}" -f $_.Extension $_.FileType)
+        cmd /c ftype ("{0}={1}" -f $_.FileType $_.Command)
+    }
+}
+
+#+END_SRC
+** Putting It All Together
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Install-Emacs {
+    if (Test-EmacsExe) {
+        Write-Host "Emacs is already installed. To update Emacs, run Update-Emacs."
+        return
+    }
+
+    . $CackledaemonConfigLocation
+
+    if (Test-Workspace) {
+        $Workspace = Get-Workspace
+    } else {
+        $Workspace = New-Workspace
+    }
+
+    $TargetVersion = Get-LatestEmacsDownload
+
+    if ($Workspace.TestInstall($TargetVersion)) {
+        $Install = $Workspace.GetInstall($TargetVersion)
+    } else {
+        if ($Workspace.TestArchive($TargetVersion)) {
+            $Archive = $Workspace.GetArchive($TargetVersion);
+        } else {
+            $Archive = New-EmacsArchive $TargetVersion
+        }
+
+        $Install = Extract-EmacsArchive $Archive
+    }
+
+    Start-Process -Wait powershell.exe -Verb RunAs -ArgumentList '-Command' "{
+        Import-Module Cackledaemon
+        Update-EmacsInstall -Path $Install
+        Set-EmacsAppPathRegistryKeys
+        Install-FileTypeAssociations
+    }"
+
+    Set-EmacsPathEnvVariable
+    Set-HomeEnvVariable
+
+    Install-Shortcuts
+}
+
+#+END_SRC
 * Daemon Management
+** TCP Server File
+Typically ~emacsclient~ communicates with the daemon using unix sockets, but
+Windows doesn't support them. Therefore, Emacs [[https://www.gnu.org/software/emacs/manual/html_node/emacs/TCP-Emacs-server.html][runs its server over TCP]] and
+~emacsclient.exe~ looks for a file that advertises the port. This file by
+default needs to exist in =~/.emacs.d/server/=. If the =~/.emacs.d= folder
+doesn't exist for whichever reason - for instance if you're using a =~/.emacs=
+file and don't have a =~/.emacs.d=, which is possible if you're using [[https://github.com/plexus/chemacs][Chemacs]] -
+then the Emacs daemon will fail to create that file and ~emacsclient.exe~ will
+be unable to connect.
 
-Need to be able to configure the server file, since the defaults break w/ chemacs
-https://www.gnu.org/software/emacs/manual/html_node/emacs/TCP-Emacs-server.html
+Working around this involves setting a variable inside your Emacs config, but
+generally speaking you should just ensure that =~/.emacs.d= exists where it's
+expected.
 
-https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.management/start-process?view=powershell-7
-https://mcpmag.com/articles/2017/09/07/creating-a-balloon-tip-notification-using-powershell.aspx
-https://github.com/proxb/PowerShell_Scripts/blob/master/Invoke-BalloonTip.ps1
-https://community.spiceworks.com/topic/1874769-how-to-monitor-services-with-powershell
-https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/convertfrom-json?view=powershell-7
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+$DefaultServerFileDirectory = Join-Path $Env:UserProfile '.emacs.d/server'
+
+function Get-ServerFileDirectory {
+    [CmdletBinding()]
+    param(
+        [string]$Path = $DefaultServerFileDirectory
+    )
+
+    Get-Item $Path
+}
+
+function Test-ServerFileDirectory {
+    [CmdletBinding()]
+    param(
+        [string]$Path = $DefaultServerFileDirectory
+    )
+
+    Test-Item $Path
+}
+
+function New-ServerFileDirectory {
+    [CmdletBinding()]
+    param(
+        [string]$Path = Join-Path $DefaultServerFileDirectory
+    )
+
+    New-Item $Path
+}
+
+function Clear-ServerFileDirectory {
+    [CmdletBinding()]
+    param(
+        [string]$Path = Join-Path $DefaultServerFileDirectory
+    )
+
+    Get-ChildItem $Path | ForEach-Object {
+        Remove-Item $_
+    }
+}
+
+#+END_SRC
 ** Process State Serialization
 In order to do basic monitoring of the Emacs daemon, we serialize the process
 object to and from a JSON file inside the working directory. We only need to
@@ -966,16 +1501,39 @@ function Invoke-Applet {
 Export-ModuleMember `
   -Function @(
       'New-CackledaemonWD',
+
+      'Get-Workspace',
+      'New-Workspace',
+      'Remove-Workspace',
+
+      'Get-EmacsExeVersion',
+      'Get-EmacsDownload',
+      'Get-LatestEmacsDownload',
+
+      'New-EmacsArchive',
+      'Extract-EmacsArchive'
+
+      'Set-EmacsAppPathRegistryKeys',
+      'Set-EmacsPathEnvVariable',
+      'Set-HomeEnvVariable',
+
+      'Get-StartMenuPath',
+      'New-Shortcut'
+
+      # filetype stuff
+
       'Invoke-LogRotate',
       'Enable-LogRotateJob',
       'Disable-LogRotateJob',
+
       'Start-EmacsDaemon',
       'Get-EmacsDaemon',
       'Stop-EmacsDaemon',
       'Restart-EmacsDaemon',
       'Get-UnmanagedEmacsDaemons',
-      'Invoke-Applet'
-  ) `
+
+      'Invoke-Applet',
+
   -Variable @(
       'CackledaemonWD',
       'CackledaemonConfigLocation'
