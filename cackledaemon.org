@@ -69,10 +69,18 @@ starting, stopping and restarting the Emacs daemon, functions and jobs for log
 management and rotation, and a tray icon for a lil' point-and-click action and
 notifications for if/when Emacs exits unexpectedly.
 
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+function Import-Cackledaemon {
+    Remove-Module Cackledaemon -ErrorAction 'SilentlyContinue'
+    Import-Module .\Cackledaemon\Cackledaemon.psm1
+}
+
+#+END_SRC
+
 * Configuration and State
 ** Working Directory
 Cackledaemon needs a place to store configurations, logs and process metadata.
-For this purpose, we create a folder at =$Env:AppData\cackledaemon=.
+For this purpose, we create a folder at =$Env:AppData\Cackledaemon=.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 $CackledaemonWD = Join-Path $Env:AppData 'cackledaemon'
@@ -82,10 +90,39 @@ function New-CackledaemonWD {
     New-Item -Path $CackledaemonWD -ItemType directory
 
     $ModuleDirectory = Split-Path -Path (Get-Module Cackledaemon).Path -Parent
-    $SourceConfigFile = Join-Path $ModuleDirectory 'DefaultConfiguration.ps1'
-    $DestinationConfigFile = Join-Path $CackledaemonWD 'Configuration.ps1'
 
-    Copy-Item $SourceConfigFile $DestinationConfigFile
+    @('Configuration.ps1', 'Shortcuts.csv', 'FileTypeAssociations.csv') | ForEach-Object {
+        $Source = Join-Path $ModuleDirectory $_
+        $Destination = Join-Path $CackledaemonWD $_
+
+        Copy-Item $Source $Destination
+    }
+}
+
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+function New-EnvironmentFixture {
+    $Global:CackledaemonWD = 'TestDrive:\Cackledaemon'
+    $Global:CackledaemonConfigLocation = Join-Path $CackledaemonWD 'Configuration.ps1'
+
+    $Env:AppData = 'TestDrive:\AppData'
+    $Env:ProgramFiles = 'TestDrive:\Program Files'
+}
+
+Describe "New-CackledaemonWD" {
+    It "creates a new and initialized working directory" {
+        Import-Cackledaemon
+        New-EnvironmentFixture
+        New-CackledaemonWD
+        New-Item $Env:AppData
+        New-Item $Env:ProgramFiles
+
+        Get-Item 'TestDrive:\Cackledaemon' | Should -Exist
+        Get-Item 'TestDrive:\Cackledaemon\Configuration.ps1' | Should -Exist
+        Get-Item 'TestDrive:\Cackledaemon\Shortcuts.csv' | Should -Exist
+        Get-Item 'TestDrive:\Cackledaemon\FileTypeAssociations.csv' | Should -Exist
+    }
 }
 
 #+END_SRC
@@ -93,17 +130,17 @@ function New-CackledaemonWD {
 Most Cackledaemon settings live in ~Configuration.ps1~. These settings can be
 loaded by sourcing the script.
 
-#+BEGIN_SRC powershell :tangle ./Cackledaemon/DefaultConfiguration.ps1
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Configuration.ps1
 # Installer Settings
 $WorkspaceDirectory = Join-Path $CackledaemonWD 'Workspace'
 $EmacsDownloadsEndpoint = 'https://ftp.gnu.org/gnu/emacs/windows/'
 $EmacsInstallLocation = Join-Path $Env:ProgramFiles 'emacs'
-$StartMenuPath = Join-Path $Env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
+$StartMenuPath = Join-Path $Env:AppData 'Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
 
 # Logging Settings
 $CackledaemonLogFile = Join-Path $CackledaemonWD 'Cackledaemon.log'
-$EmacsStdOutLogFile = Join-Path $CackledaemonWD 'EmacsStdout.log'
-$EmacsStdErrLogFile = Join-Path $CackledaemonWD 'EmacsStderr.log'
+$EmacsStdOutLogFile = Join-Path $CackledaemonWD 'EmacsStdOut.log'
+$EmacsStdErrLogFile = Join-Path $CackledaemonWD 'EmacsStdErr.log'
 $LogSize = 1mb
 $LogRotate = 4
 $LogCheckTime = 60  # Seconds
@@ -112,8 +149,34 @@ $LogCheckTime = 60  # Seconds
 $NotifyTimeout = 5000
 #+END_SRC
 
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Configuration.ps1' {
+    It 'defines sensible settings' {
+        Import-Cackledaemon
+        New-EnvironmentFixture
+        New-CackledaemonWD
+        New-Item $Env:AppData
+        New-Item $Env:ProgramFiles
 
-#+BEGIN_SRC powershell :tangle ./Cackledaemon/shortcuts.csv
+        . $CackledaemonConfigLocation
+
+        $WorkspaceDirectory | Should -Be 'TestDrive:\Cackledaemon\Workspace'
+        $EmacsDownloadsEndpoint | Should -Be 'https://ftp.gnu.org/gnu/emacs/windows/'
+        $EmacsInstallLocation | Should -Be 'TestDrive:\Program Files\emacs'
+        $StartMenuPath | Should -Be 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
+
+        $CackledaemonLogFile | Should -Be 'TestDrive:\Cackledaemon\Cackledaemon.log'
+        $EmacsStdOutLogFile | Should -Be 'TestDrive:\Cackledaemon\EmacsStdOut.log'
+        $EmacsStdErrLogFile | Should -Be 'TestDrive:\Cackledaemon\EmacsStdErr.log'
+        $LogSize | Should -Be 1mb
+        $LogRotate | Should -Be 4
+        $LogCheckTime | Should -Be 60
+
+        $NotifyTimeout | Should -Be 5000
+    }
+}
+
+#+END_SRC
 ** Start Menu Shortcuts Config
 The desired state of Start menu shortcuts are stored in a CSV file. Note that
 the ~TYPE~ header is necessary, and the ~$ArgumentList~ is double-encoded as a
@@ -176,7 +239,7 @@ Desired file type associations are also stored in a CSV file. Note that the
 ~TYPE~ header is necessary. The format of the command string is detailed in [[https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/ftype][the
 documentation for the ~ftype~ batch command.]]
 
-#+BEGIN_SRC csv :tangle ./Cackledaemon/Associations.csv
+#+BEGIN_SRC csv :tangle ./Cackledaemon/FileTypeAssociations.csv
 #Type FileTypeAssociationCsvRecord
 "FileType","Extension","Command"
 Gnu.Emacs.Org,.org,emacsclientw.exe -c %1
@@ -201,6 +264,7 @@ class FileTypeAssociationRecord {
 }
 
 class FileTypeAssociationCsvRecord : FileTypeAssociationRecord {
+    FileTypeAssociationCsvRecord([string]$FileType, [string]$Extension, [string]$Command): base($FileType, $Extension, $Command) {}
 }
 
 function Get-FileTypeAssociationsConfig {
@@ -737,7 +801,7 @@ function New-EmacsArchive {
     return Get-Item $Archive
 }
 
-function Extract-EmacsArchive {
+function Export-EmacsArchive {
     param(
         [Parameter(Position=0)]
         [System.IO.FileInfo]$Archive
@@ -756,7 +820,7 @@ function Extract-EmacsArchive {
 
 function Update-EmacsInstall {
     param(
-        [System.IO.DirectoryInfo]$Source
+        [System.IO.DirectoryInfo]$Source,
         [string]$Path
     )
 
@@ -976,8 +1040,8 @@ Note that these commands must be ran with Administrator privileges.
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Install-FileTypeAssociations {
     Get-FileTypeAssociationsConfig | ForEach-Object {
-        cmd /c assoc ("{0}={1}" -f $_.Extension $_.FileType)
-        cmd /c ftype ("{0}={1}" -f $_.FileType $_.Command)
+        cmd /c assoc ("{0}={1}" -f $_.Extension, $_.FileType)
+        cmd /c ftype ("{0}={1}" -f $_.FileType, $_.Command)
     }
 }
 
@@ -1009,7 +1073,7 @@ function Install-Emacs {
             $Archive = New-EmacsArchive $TargetVersion
         }
 
-        $Install = Extract-EmacsArchive $Archive
+        $Install = Export-EmacsArchive $Archive
     }
 
     Start-Process -Wait powershell.exe -Verb RunAs -ArgumentList '-Command' "{
@@ -1065,7 +1129,7 @@ function Test-ServerFileDirectory {
 function New-ServerFileDirectory {
     [CmdletBinding()]
     param(
-        [string]$Path = Join-Path $DefaultServerFileDirectory
+        [string]$Path = $DefaultServerFileDirectory
     )
 
     New-Item $Path
@@ -1074,7 +1138,7 @@ function New-ServerFileDirectory {
 function Clear-ServerFileDirectory {
     [CmdletBinding()]
     param(
-        [string]$Path = Join-Path $DefaultServerFileDirectory
+        [string]$Path = $DefaultServerFileDirectory
     )
 
     Get-ChildItem $Path | ForEach-Object {
@@ -1511,7 +1575,7 @@ Export-ModuleMember `
       'Get-LatestEmacsDownload',
 
       'New-EmacsArchive',
-      'Extract-EmacsArchive'
+      'Export-EmacsArchive'
 
       'Set-EmacsAppPathRegistryKeys',
       'Set-EmacsPathEnvVariable',
@@ -1532,8 +1596,8 @@ Export-ModuleMember `
       'Restart-EmacsDaemon',
       'Get-UnmanagedEmacsDaemons',
 
-      'Invoke-Applet',
-
+      'Invoke-Applet'
+  )`
   -Variable @(
       'CackledaemonWD',
       'CackledaemonConfigLocation'
@@ -1629,6 +1693,11 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
 #+END_SRC
 * Development Tasks
 Cackledaemon can be built and published using [[https://github.com/nightroman/Invoke-Build][Invoke-Build]].
+
+#+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
+task . Clean, Build, Test
+
+#+END_SRC
 ** Building Cackledaemon
 =Invoke-Build= will call Emacs in batch mode to build this project using
 ~org-babel~. Alternately, you may type ~C-c C-v t~ with this file open in Emacs.
@@ -1651,12 +1720,29 @@ This emacs batch script tangles ~cackledaemon.org~ and generates the ~README.md~
 
 =Invoke-Build= wraps this in a task which shells out to Emacs:
 
-#+BEGIN_SRC powershell :tangle Cackledaemon.build.ps1
-task . Build
-
+#+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
 task Build {
     emacs.exe --batch --load build.el
-    Remove-Item README.md~
+    Remove-Item 'README.md~' -ErrorAction 'SilentlyContinue'
+}
+
+#+END_SRC
+
+** Cleanup
+#+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
+task Clean {
+    Get-ChildItem './Cackledaemon' | ForEach-Object {
+        Remove-Item $_.FullName
+    }
+    Remove-Item 'README.md' -ErrorAction 'SilentlyContinue'
+    Remove-Item 'README.md~' -ErrorAction 'SilentlyContinue'
+}
+
+#+END_SRC
+** Testing Cackledaemon
+#+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
+task Test {
+    Invoke-Pester
 }
 
 #+END_SRC
@@ -1666,7 +1752,7 @@ This project can be published on the Powershell Gallery by running
 =.\Secrets.ps1= file that defines =$PowershellGalleryAPIKey= as a valid
 Powershell Gallery NuGet API key. This file gets sourced by the ~Publish~ task.
 
-#+BEGIN_SRC powershell :tangle Cackledaemon.build.ps1
+#+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
 task Publish Build, {
     . .\Secrets.ps1
      Publish-Module -Path .\Cackledaemon\ -NuGetApiKey $PowershellGalleryAPIKey
