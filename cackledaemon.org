@@ -95,10 +95,6 @@ function New-CackledaemonWD {
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
 function Initialize-TestEnvironment {
-    $Global:OriginalAppData = $Env:AppData
-    $Global:OriginalProgramFiles = $Env:ProgramFiles
-    $Global:OriginalModulePath = (Get-Module 'Cackledaemon').Path
-
     $Env:AppData = 'TestDrive:\AppData'
     $Env:ProgramFiles = 'TestDrive:\Program Files'
 
@@ -114,25 +110,14 @@ function Initialize-TestEnvironment {
     New-CackledaemonWD
 }
 
-function Restore-StandardEnvironment {
-    $Env:AppData = $Global:OriginalAppData
-    $Env:ProgramFiles = $Global:OriginalProgramFiles
-    Remove-Module Cackledaemon
-    if ($Global:OriginalModulePath) {
-        Import-Module $Global:OriginalModulePath
-    }
-}
-
 Describe "New-CackledaemonWD" {
     It "creates a new and initialized working directory" {
         Initialize-TestEnvironment
 
-        Get-Item 'TestDrive:\Cackledaemon' | Should -Exist
-        Get-Item 'TestDrive:\Cackledaemon\Configuration.ps1' | Should -Exist
-        Get-Item 'TestDrive:\Cackledaemon\Shortcuts.csv' | Should -Exist
-        Get-Item 'TestDrive:\Cackledaemon\FileTypeAssociations.csv' | Should -Exist
-
-        Restore-StandardEnvironment
+        'TestDrive:\Cackledaemon' | Should -Exist
+        'TestDrive:\Cackledaemon\Configuration.ps1' | Should -Exist
+        'TestDrive:\Cackledaemon\Shortcuts.csv' | Should -Exist
+        'TestDrive:\Cackledaemon\FileTypeAssociations.csv' | Should -Exist
     }
 }
 
@@ -162,7 +147,7 @@ $NotifyTimeout = 5000
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
 Describe 'Configuration.ps1' {
-    It 'defines sensible settings' {
+    It 'defines base settings' {
         Initialize-TestEnvironment
 
         . $CackledaemonConfigLocation
@@ -180,8 +165,6 @@ Describe 'Configuration.ps1' {
         $LogCheckTime | Should -Be 60
 
         $NotifyTimeout | Should -Be 5000
-
-        Restore-StandardEnvironment
     }
 }
 
@@ -243,6 +226,26 @@ function Get-ShortcutsConfig {
 }
 
 #+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Get-ShortcutsConfig' {
+    It 'loads shortcuts settings' {
+        Initialize-TestEnvironment
+
+        $Config = Get-ShortcutsConfig
+
+        $Config | Should -Not -Be $null
+
+        $Config.length | Should -Be 1
+
+        $Config[0].ShortcutName | Should -Be 'Emacs Client'
+        $Config[0].EmacsBinaryName | Should -Be 'emacsclientw.exe'
+        $Config[0].ArgumentList | Should -Be @()
+        $Config[0].Description | Should -Be 'Open the Emacs Client'
+    }
+}
+
+#+END_SRC
 ** File Type Associations Config
 Desired file type associations are also stored in a CSV file. Note that the
 ~TYPE~ header is necessary. The format of the command string is detailed in [[https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/ftype][the
@@ -277,11 +280,33 @@ class FileTypeAssociationCsvRecord : FileTypeAssociationRecord {
 }
 
 function Get-FileTypeAssociationsConfig {
-    ImportCsv -Path (Join-Path $CackledaemonWD './Associations.csv') | ForEach-Object {
-        [FileTypeAssociationRecord]$_
+    Import-Csv -Path (Join-Path $CackledaemonWD './FileTypeAssociations.csv') | ForEach-Object {
+        New-Object FileTypeAssociationRecord $_.FileType, $_.Extension, $_.Command
     }
 }
 
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Get-FileTypeAssociationsConfig' {
+    It 'loads file type association settings' {
+        Initialize-TestEnvironment
+
+        $Config = Get-FileTypeAssociationsConfig
+
+        $Config | Should -Not -Be $null
+
+        $Config.length | Should -Be 2
+
+        $Config[0].FileType | Should -Be 'Gnu.Emacs.Org'
+        $Config[0].Extension | Should -Be '.org'
+        $Config[0].Command | Should -Be 'emacsclientw.exe -c %1'
+
+        $Config[1].FileType | Should -Be 'Gnu.Emacs.ELisp'
+        $Config[1].Extension | Should -Be '.el'
+        $Config[1].Command | Should -Be 'emacsclientw.exe -c %1'
+    }
+}
 #+END_SRC
 * Job Management
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
@@ -298,7 +323,7 @@ function Enable-CackledaemonJob {
 
     if ($Job) {
         Write-LogWarning ('{0} job already exists. Trying to stop and remove...' -f $Name)
-            Disable-CackledaemonJob -ErrorAction Stop
+            Disable-CackledaemonJob -Name $Job.Name -ErrorAction Stop
 
     }
 
@@ -319,6 +344,56 @@ function Enable-CackledaemonJob {
     }
 }
 
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe "Enable-CackledaemonJob" {
+    Context "when a job doesn't exist" {
+        It "creates a new job" {
+            Initialize-TestEnvironment
+
+            Stop-Job -Name 'testJob' -ErrorAction SilentlyContinue
+            Remove-Job -Name 'testJob' -ErrorAction SilentlyContinue
+
+            Enable-CackledaemonJob "testJob" {} -ErrorAction Stop
+
+            $Job = Get-Job -Name 'testJob'
+            $Job | Should -Not -Be $null
+
+            Stop-Job -Id $Job.Id
+            Remove-Job -Id $Job.Id
+        }
+    }
+
+    Context "when a job already exists" {
+        It 'disables and then creates a new job' {
+            Initialize-TestEnvironment
+
+            Stop-Job -Name 'testJob' -ErrorAction SilentlyContinue
+            Remove-Job -Name 'testJob' -ErrorAction SilentlyContinue
+
+            Start-Job -Name 'testJob' -ScriptBlock {}
+
+            Enable-CackledaemonJob "testJob" {} -ErrorAction Stop -WarningVariable Warnings 3> $null
+
+            $Warnings | Should -Not -Be $null
+            $Warnings.Count | Should -Be 1
+
+            $Warnings[0].ToString() | Should -Be "testJob job already exists. Trying to stop and remove..."
+
+            $Job = Get-Job -Name 'testJob'
+
+            $Job | Should -Not -Be $null
+            $Job.length | Should -Be 1
+
+            Stop-Job -Id $Job.Id
+            Remove-Job -Id $Job.Id
+        }
+    }
+}
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Disable-CackledaemonJob {
     [CmdletBinding()]
     param(
@@ -330,11 +405,12 @@ function Disable-CackledaemonJob {
 
     if (-not $Job) {
         Write-LogWarning ("{0} job doesn't exist. Doing nothing." -f $Name)
+        return
     }
 
     try {
         Stop-Job -Name $Name -ErrorAction Stop
-        Remove-Job -Name $Name
+        Remove-Job -Name $Name -ErrorAction Stop
     } catch {
         Write-LogError -Message ('Failed to stop and remove {0} job.' -f $Name) `
             -Exception $_.Exception `
@@ -348,6 +424,45 @@ function Disable-CackledaemonJob {
 
 #+END_SRC
 
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe "Disable-CackledaemonJob" {
+    Context "when a job exists" {
+        It "disables the job" {
+            Initialize-TestEnvironment
+
+            Stop-Job -Name 'testJob' -ErrorAction SilentlyContinue
+            Remove-Job -Name 'testJob' -ErrorAction SilentlyContinue
+
+            Start-Job -Name 'testJob' -ScriptBlock {}
+
+            Disable-CackledaemonJob "testJob" -ErrorAction Stop
+
+            $Job = Get-Job -Name 'testJob' -ErrorAction SilentlyContinue
+            $Job | Should -Be $null
+        }
+    }
+
+    Context "when a job has already been removed" {
+        It 'does nothing' {
+            Initialize-TestEnvironment
+
+            Stop-Job -Name 'testJob' -ErrorAction SilentlyContinue
+            Remove-Job -Name 'testJob' -ErrorAction SilentlyContinue
+
+            Disable-CackledaemonJob "testJob" -ErrorAction Stop -WarningVariable Warnings 3> $null
+
+            $Warnings | Should -Not -Be $null
+            $Warnings.length | Should -Be 1
+
+            $Warnings[0].ToString() | Should -Be "testJob job doesn't exist. Doing nothing."
+
+            $Job = Get-Job -Name 'testJob' -ErrorAction SilentlyContinue
+
+            $Job | Should -Be $null
+        }
+    }
+}
+#+END_SRC
 * Logging
 ** Logger
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
@@ -370,24 +485,32 @@ function Write-Log {
         Write-Warning 'Unable to load configuration! Unable to write to log file.'
     }
 
-    if (-not @('Debug', 'Verbose', 'Warning', 'Error').Contains($Level)) {
-        Write-Warning ('Write-Log called with unrecognized level {0}' -f $Level)
+    if (-not @('Debug', 'Verbose', 'Information', 'Warning', 'Error').Contains($Level)) {
+        Write-LogWarning ('Write-Log called with unrecognized level {0}' -f $Level)
         $Level = 'Warning'
+    }
+
+    if ($Level -eq 'Error' -and $Exception) {
+        $Message = ('{0} (Exception: {1})' -f $Message, $Exception)
     }
 
     $Line = ('[{0}] {1}: {2}' -f (Get-Date -Format o), $Level, $Message)
 
+    if ($CackledaemonLogFile) {
+        Add-Content $CackledaemonLogFile -Value $Line
+    }
+
     if ($Level -eq 'Debug') {
         Write-Debug $Message
+    }
+    if ($Level -eq 'Information') {
+        Write-Information $Message
     } elseif ($Level -eq 'Verbose') {
         Write-Verbose $Message
     } elseif ($Level -eq 'Warning') {
         Write-Warning $Message
     } elseif ($Level -eq 'Error') {
         if ($Exception) {
-            $Message = ('{0} (Exception: {1})' -f $Message, $Exception)
-
-
             Write-Error -Message $Message `
               -Exception $Exception `
               -Category $Category `
@@ -404,10 +527,6 @@ function Write-Log {
               -CategoryTargetType $CategoryTargetType
         }
     }
-
-    if ($CackledaemonLogFile) {
-        Add-Content $CackledaemonLogFile -value $Line
-    }
 }
 
 function Write-LogDebug {
@@ -415,6 +534,13 @@ function Write-LogDebug {
     param([string]$Message)
 
     Write-Log $Message -Level Debug
+}
+
+function Write-LogInformation {
+    [Parameter(Position=0)]
+    param([string]$Message)
+
+    Write-Log $Message -Level Information
 }
 
 function Write-LogVerbose {
@@ -464,58 +590,236 @@ function Write-LogError {
 }
 
 #+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+$TimestampRegexp = '\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{7}-\d{2}:\d{2}\]'
+
+Describe 'Write-Log' {
+    Context 'when the configuration is missing' {
+        It 'warns and does nothing' {
+            Initialize-TestEnvironment
+
+            Remove-Item $CackledaemonConfigLocation
+
+            Write-Log -Message "test log" -WarningVariable Warnings 3> $null
+
+            'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -Not -Exist
+
+            $Warnings | Should -Not -Be $null
+            $Warnings.Count | Should -Be 1
+            $Warnings[0].ToString() | Should -Be 'Unable to load configuration! Unable to write to log file.'
+        }
+    }
+
+    Context 'when called with an unrecognized level' {
+        It 'warns and then logs at the warning level' {
+            Initialize-TestEnvironment
+
+            Write-Log -Level 'InvalidLevel' -Message 'Test Message' -WarningVariable Warnings 3> $null
+
+            'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -FileContentMatch "^$TimestampRegexp Warning: Write-Log called with unrecognized level InvalidLevel$"
+            'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -FileContentMatch "^$TimestampRegexp Warning: Test Message$"
+
+            $Warnings | Should -Not -Be $null
+            $Warnings.Count | Should -Be 2
+
+            $Warnings[0].ToString() | Should -Be 'Write-Log called with unrecognized level InvalidLevel'
+            $Warnings[1].ToString() | Should -Be 'Test Message'
+        }
+    }
+}
+
+@('Debug', 'Verbose', 'Information', 'Warning') | ForEach-Object {
+    Describe ('Write-Log{0}' -f $_) {
+        It ('logs at the {0} level' -f $_) {
+            Initialize-TestEnvironment
+
+            Invoke-Expression "Write-Log${_} 'Test message'" 3> $null
+
+            'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -FileContentMatch "^$TimestampRegexp ${_}: Test message$"
+        }
+    }
+}
+
+Describe 'Write-LogError' {
+    Context 'when called with an exception type' {
+        It 'logs an error' {
+            Initialize-TestEnvironment
+
+            $Exception = New-Object Exception 'Test exception'
+
+            Write-LogError `
+              'Test message' `
+              -Exception (New-Object Exception 'Test exception') `
+              -Category 'InvalidOperation' `
+              -CategoryActivity 'Logging with an exception' `
+              -CategoryReason 'Testing' `
+              -CategoryTargetName 'SomeTarget' `
+              -CategoryTargetType 'SomeTargetType' 2> $null
+
+            $Error[0].ToString() | Should -Be 'Test message (Exception: System.Exception: Test exception)'
+            $Error[0].CategoryInfo.Category.ToString() | Should -Be 'InvalidOperation'
+            $Error[0].CategoryInfo.Reason | Should -Be 'Testing'
+            $Error[0].CategoryInfo.TargetName | Should -Be 'SomeTarget'
+            $Error[0].CategoryInfo.TargetType | Should -Be 'SomeTargetType'
+
+            'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -Exist
+            'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -FileContentMatch "^$TimestampRegexp Error: Test message \(Exception: System.Exception: Test exception\)$"
+        }
+    }
+
+    Context 'when called without an exception type' {
+        It 'logs an error' {
+            Initialize-TestEnvironment
+
+            Write-LogError `
+              'Test message' `
+              -Category 'InvalidOperation' `
+              -CategoryActivity 'Logging without an exception' `
+              -CategoryReason 'Testing' `
+              -CategoryTargetName 'SomeTarget' `
+              -CategoryTargetType 'SomeTargetType' 2> $null
+
+            $Error[0].Exception | Should -Not -Be $null
+            $Error[0].CategoryInfo.Category.ToString() | Should -Be 'InvalidOperation'
+            $Error[0].CategoryInfo.Reason | Should -Be 'Testing'
+            $Error[0].CategoryInfo.TargetName | Should -Be 'SomeTarget'
+            $Error[0].CategoryInfo.TargetType | Should -Be 'SomeTargetType'
+
+            'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -Exist
+            'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -FileContentMatch "^$TimestampRegexp Error: Test Message$"
+        }
+    }
+}
+
+
+#+END_SRC
 ** Log Rotation
 This function more or less tries to emulate a typical logrotate config - it
 rotates the log if it's at or over a certain size, retains some finite count of
-log files, and drops the last one if necessary. It will do this every configured
-amount of seconds indefinitely.
+log files, and drops the last one if necessary.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Invoke-LogRotate {
     [CmdletBinding()]
     param()
 
-    while ($true) {
-        @($CackledaemonLogFile, $EmacsStdoutLogFile, $EmacsStdErrLogFile) | ForEach-Object {
-            $LogFile = $_
+    . $CackledaemonConfigLocation
 
-            if ((Get-Item $LogFile).Length -ge $LogSize) {
-                Write-LogVerbose ('Rotating {0}...' -f $LogFile)
+    @($CackledaemonLogFile, $EmacsStdoutLogFile, $EmacsStdErrLogFile) | ForEach-Object {
+        $LogFile = $_
 
-                ($LogRotate..0) | ForEach-Object {
-                    $Current = $(if ($_) {
-                        '{0}.{1}' -f $LogFile, $_
-                    } else { $LogFile })
+        if ((Test-Path $LogFile) -and (Get-Item $LogFile).Length -ge $LogSize) {
+            Write-LogVerbose ('Rotating {0}...' -f $LogFile)
 
-                    $Next = '{0}.{1}' -f $LogFile, ($_ + 1)
+            ($LogRotate..0) | ForEach-Object {
+                $Current = $(if ($_) {
+                    '{0}.{1}' -f $LogFile, $_
+                } else { $LogFile })
 
-                    if (Test-Path $Current) {
-                        Write-Log ('Copying {0} to {1}...' -f $Current, $Next)
+                $Next = '{0}.{1}' -f $LogFile, ($_ + 1)
 
-                        Copy-Item -Path $Current -Destination $Next
-                    }
+                if (Test-Path $Current) {
+                    Write-Log ('Copying {0} to {1}...' -f $Current, $Next)
+
+                    Copy-Item -Path $Current -Destination $Next
                 }
-
-                Write-LogVerbose ('Truncating {0}...' -f $LogFile)
-
-                Clear-Content $LogFile
-
-                $StaleLogFile = '{0}.{1}' -f ($LogRotate + 1)
-
-                if (Test-Path $StaleLogFile) {
-                    Write-LogVerbose ('Removing {0}...' -f $StaleLogFile)
-
-                    Remove-Item $StaleLogFile
-                }
-
-                Write-LogVerbose 'Done.'
             }
+
+            Write-LogVerbose ('Truncating {0}...' -f $LogFile)
+
+            Clear-Content $LogFile
+
+            $StaleLogFile = '{0}.{1}' -f $LogFile, ($LogRotate + 1)
+
+            if (Test-Path $StaleLogFile) {
+                Write-LogVerbose ('Removing {0}...' -f $StaleLogFile)
+
+                Remove-Item $StaleLogFile
+            }
+
+            Write-LogVerbose 'Done.'
         }
-        Write-LogDebug ('No need to rotate logs. Sleeping for {0} seconds.' -f $LogCheckTime)
-        Start-Sleep -Seconds $LogCheckTime
     }
 }
 
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Invoke-LogRotate' {
+    It 'rotates the logs' {
+        Initialize-TestEnvironment
+
+        Add-Content 'TestDrive:\Cackledaemon\Configuration.ps1' '$LogSize = 1'
+
+        Write-LogVerbose 'Testing 1'
+
+        'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -FileContentMatch 'Testing 1'
+        'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -Not -Exist
+        'TestDrive:\Cackledaemon\EmacsStdOut.log' | Should -Not -Exist
+        'TestDrive:\Cackledaemon\EmacsStdErr.log' | Should -Not -Exist
+
+        Invoke-LogRotate
+
+        'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Not -FileContentMatch 'Testing 1'
+        'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -FileContentMatch 'Testing 1'
+
+        Write-LogVerbose 'Testing 2'
+        Invoke-LogRotate
+
+        'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Not -FileContentMatch 'Testing 2'
+        'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -FileContentMatch 'Testing 2'
+        'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -FileContentMatch 'Testing 1'
+
+        Write-LogVerbose 'Testing 3'
+        Invoke-LogRotate
+
+        'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Not -FileContentMatch 'Testing 3'
+        'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -FileContentMatch 'Testing 3'
+        'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -FileContentMatch 'Testing 2'
+        'TestDrive:\Cackledaemon\Cackledaemon.log.3' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log.3' | Should -FileContentMatch 'Testing 1'
+
+        Write-LogVerbose 'Testing 4'
+        Invoke-LogRotate
+
+        'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Not -FileContentMatch 'Testing 4'
+        'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -FileContentMatch 'Testing 4'
+        'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -FileContentMatch 'Testing 3'
+        'TestDrive:\Cackledaemon\Cackledaemon.log.3' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log.3' | Should -FileContentMatch 'Testing 2'
+        'TestDrive:\Cackledaemon\Cackledaemon.log.4' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log.4' | Should -FileContentMatch 'Testing 1'
+
+        Write-LogVerbose 'Testing 5'
+        Invoke-LogRotate
+
+        'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Not -FileContentMatch 'Testing 5'
+        'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -FileContentMatch 'Testing 5'
+        'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -FileContentMatch 'Testing 4'
+        'TestDrive:\Cackledaemon\Cackledaemon.log.3' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log.3' | Should -FileContentMatch 'Testing 3'
+        'TestDrive:\Cackledaemon\Cackledaemon.log.4' | Should -Exist
+        'TestDrive:\Cackledaemon\Cackledaemon.log.4' | Should -FileContentMatch 'Testing 2'
+        'TestDrive:\Cackledaemon\Cackledaemon.log.5' | Should -Not -Exist
+
+    }
+}
 #+END_SRC
 
 We can also use a job to manage log rotation.
@@ -525,7 +829,13 @@ function Enable-LogRotateJob {
     [CmdletBinding()]
     param()
 
-    Enable-CackledaemonJob 'LogRotateJob' { Invoke-LogRotate }
+    Enable-CackledaemonJob 'LogRotateJob' {
+        while ($True) {
+            Invoke-LogRotate
+            Write-LogDebug ('LogRotateJob sleeping for {0} seconds.' -f $LogCheckTime)
+            Start-Sleep -Seconds $LogCheckTime
+        }
+    }
 }
 
 function Disable-LogRotateJob {
@@ -1574,6 +1884,17 @@ function Invoke-Applet {
 Export-ModuleMember `
   -Function @(
       'New-CackledaemonWD',
+      'Get-FileTypeAssociationsConfig',
+
+      'Write-Log',
+      'Write-LogDebug',
+      'Write-LogInformation',
+      'Write-LogVerbose',
+      'Write-LogWarning',
+      'Write-LogError',
+
+      'Enable-CackledaemonJob',
+      'Disable-CackledaemonJob',
 
       'Get-Workspace',
       'New-Workspace',
@@ -1591,7 +1912,8 @@ Export-ModuleMember `
       'Set-HomeEnvVariable',
 
       'Get-StartMenuPath',
-      'New-Shortcut'
+      'New-Shortcut',
+      'Get-ShortcutsConfig',
 
       # filetype stuff
 
@@ -1751,7 +2073,18 @@ task Clean {
 ** Testing Cackledaemon
 #+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
 task Test {
+    $Global:OriginalAppData = $Env:AppData
+    $Global:OriginalProgramFiles = $Env:ProgramFiles
+    $Global:OriginalModulePath = (Get-Module 'Cackledaemon').Path
+
     Invoke-Pester
+
+    $Env:AppData = $Global:OriginalAppData
+    $Env:ProgramFiles = $Global:OriginalProgramFiles
+    Remove-Module Cackledaemon
+    if ($Global:OriginalModulePath) {
+        Import-Module $Global:OriginalModulePath
+    }
 }
 
 #+END_SRC
