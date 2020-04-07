@@ -69,14 +69,6 @@ starting, stopping and restarting the Emacs daemon, functions and jobs for log
 management and rotation, and a tray icon for a lil' point-and-click action and
 notifications for if/when Emacs exits unexpectedly.
 
-#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
-function Import-Cackledaemon {
-    Remove-Module Cackledaemon -ErrorAction 'SilentlyContinue'
-    Import-Module .\Cackledaemon\Cackledaemon.psm1
-}
-
-#+END_SRC
-
 * Configuration and State
 ** Working Directory
 Cackledaemon needs a place to store configurations, logs and process metadata.
@@ -102,26 +94,45 @@ function New-CackledaemonWD {
 #+END_SRC
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
-function New-EnvironmentFixture {
-    $Global:CackledaemonWD = 'TestDrive:\Cackledaemon'
-    $Global:CackledaemonConfigLocation = Join-Path $CackledaemonWD 'Configuration.ps1'
+function Initialize-TestEnvironment {
+    $Global:OriginalAppData = $Env:AppData
+    $Global:OriginalProgramFiles = $Env:ProgramFiles
+    $Global:OriginalModulePath = (Get-Module 'Cackledaemon').Path
 
     $Env:AppData = 'TestDrive:\AppData'
     $Env:ProgramFiles = 'TestDrive:\Program Files'
+
+    New-Item $Env:AppData
+    New-Item $Env:ProgramFiles
+
+    Remove-Module Cackledaemon -ErrorAction 'SilentlyContinue'
+    Import-Module .\Cackledaemon\Cackledaemon.psm1
+
+    $Global:CackledaemonWD = 'TestDrive:\Cackledaemon'
+    $Global:CackledaemonConfigLocation = Join-Path $CackledaemonWD 'Configuration.ps1'
+
+    New-CackledaemonWD
+}
+
+function Restore-StandardEnvironment {
+    $Env:AppData = $Global:OriginalAppData
+    $Env:ProgramFiles = $Global:OriginalProgramFiles
+    Remove-Module Cackledaemon
+    if ($Global:OriginalModulePath) {
+        Import-Module $Global:OriginalModulePath
+    }
 }
 
 Describe "New-CackledaemonWD" {
     It "creates a new and initialized working directory" {
-        Import-Cackledaemon
-        New-EnvironmentFixture
-        New-CackledaemonWD
-        New-Item $Env:AppData
-        New-Item $Env:ProgramFiles
+        Initialize-TestEnvironment
 
         Get-Item 'TestDrive:\Cackledaemon' | Should -Exist
         Get-Item 'TestDrive:\Cackledaemon\Configuration.ps1' | Should -Exist
         Get-Item 'TestDrive:\Cackledaemon\Shortcuts.csv' | Should -Exist
         Get-Item 'TestDrive:\Cackledaemon\FileTypeAssociations.csv' | Should -Exist
+
+        Restore-StandardEnvironment
     }
 }
 
@@ -152,11 +163,7 @@ $NotifyTimeout = 5000
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
 Describe 'Configuration.ps1' {
     It 'defines sensible settings' {
-        Import-Cackledaemon
-        New-EnvironmentFixture
-        New-CackledaemonWD
-        New-Item $Env:AppData
-        New-Item $Env:ProgramFiles
+        Initialize-TestEnvironment
 
         . $CackledaemonConfigLocation
 
@@ -173,6 +180,8 @@ Describe 'Configuration.ps1' {
         $LogCheckTime | Should -Be 60
 
         $NotifyTimeout | Should -Be 5000
+
+        Restore-StandardEnvironment
     }
 }
 
