@@ -900,7 +900,24 @@ One check we can do to see if Emacs is already installed is to see if
 function Test-EmacsExe {
     . $CackledaemonConfigLocation
 
-    Test-Item (Join-Path $EmacsInstallLocation 'bin' 'emacs.exe')
+    Test-Path (Join-Path $EmacsInstallLocation 'bin\emacs.exe')
+}
+
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Test-EmacsExe' {
+    It 'searches for emacs.exe in the correct location' {
+        Initialize-TestEnvironment
+
+        Mock -ModuleName Cackledaemon Test-Path { $True }
+
+        Test-EmacsExe | Should -Be $True
+
+        Assert-MockCalled -ModuleName Cackledaemon Test-Path `
+          -Times 1 `
+          -ParameterFilter { $Path -eq 'TestDrive:\Program Files\emacs\bin\emacs.exe'}
+    }
 }
 
 #+END_SRC
@@ -947,9 +964,40 @@ thing when compared to a =Version= instance.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Get-EmacsExeVersion {
-    if (Get-Command 'emacs.exe' -ErrorAction SilentlyContinue) {
-        if ((emacs.exe --version)[0] -match '^GNU Emacs (\d+)\.(\d+)$') {
+    if (Test-EmacsExe) {
+        . $CackledaemonConfigLocation
+
+        $EmacsExe = Join-Path $EmacsInstallLocation 'bin\emacs.exe'
+        if ((Invoke-Expression "$EmacsExe --version")[0] -match '^GNU Emacs (\d+)\.(\d+)$') {
             New-Object Version $Matches[1], $Matches[2]
+        }
+    }
+}
+
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Get-EmacsExeVersion' {
+    Context 'when emacs is installed' {
+        It 'returns a version' {
+            Initialize-TestEnvironment
+
+            Mock -ModuleName Cackledaemon Test-EmacsExe { $True }
+            Mock -ModuleName Cackledaemon Invoke-Expression {
+                return 'GNU Emacs 26.2
+Copyright (C) 2019 Free Software Foundation, Inc.
+GNU Emacs comes with ABSOLUTELY NO WARRANTY.
+You may redistribute copies of GNU Emacs
+under the terms of the GNU General Public License.
+For more information about these matters, see the file named COPYING.'
+            }
+
+            $Version = Get-EmacsExeVersion
+
+            Assert-MockCalled -ModuleName Cackledaemon Test-EmacsExe -Times 1
+            Assert-MockCalled -ModuleName Cackledaemon Invoke-Expression `
+              -Times 1 `
+              -ParameterFilter { $Command -eq 'TestDrive:\Program Files\emacs\bin\emacs.exe --version' }
         }
     }
 }
@@ -982,11 +1030,16 @@ class Download {
 function Get-EmacsDownload {
     . $CackledaemonConfigLocation
 
-    Write-LogInfo ('Checking {0} for available Emacs versions...' -f $EmacsDownloadsEndpoint)
-    (Invoke-WebRequest $EmacDownloadsEndpoint).Links | ForEach-Object {
+    Write-LogVerbose ('Checking {0} for available Emacs versions...' -f $EmacsDownloadsEndpoint)
+    return (Invoke-WebRequest $EmacsDownloadsEndpoint).Links | ForEach-Object {
         if ($_.href -match '^emacs-(\d+)/$') {
             $MajorPathPart = $_.href
-            (Invoke-WebRequest ($EmacDownloadsEndpoint + $_.href)).Links | ForEach-Object {
+
+            if ([int]$Matches[1] -lt 25) {
+                return
+            }
+
+            (Invoke-WebRequest ($EmacsDownloadsEndpoint + $MajorPathPart)).Links | ForEach-Object {
                  if ($_.href -match '^emacs-(\d+)\.(\d+)-x86_64\.zip$') {
                      $Href = $EmacsDownloadsEndpoint + $MajorPathPart + $_.href
                      return New-Object Download $Matches[1], $Matches[2], $Href
@@ -998,6 +1051,58 @@ function Get-EmacsDownload {
 
 function Get-LatestEmacsDownload {
     (Get-EmacsDownload | Measure-Object -Maximum).Maximum
+}
+
+#+END_SRC
+
+This test was *way* too difficult to write lmao!
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Get-EmacsDownload' {
+    It 'fetches emacs downloads' {
+        Initialize-TestEnvironment
+
+        Mock -ModuleName Cackledaemon Invoke-WebRequest {
+            class FakeLink {
+                [string]$href
+            }
+
+            class FakeResponse {
+                [FakeLink[]]$Links
+            }
+
+            if (-not (Test-Path '.\Tapes')) {
+                New-Item -Type Directory '.\Tapes'
+            }
+
+            $TapePath = Join-Path '.\Tapes' ('{0}.json' -f [uri]::EscapeDataString($Uri))
+
+            if (Test-Path $TapePath) {
+                $Response = New-Object FakeResponse
+                $Response.Links = (Get-Content $TapePath | ConvertFrom-Json).Links | ForEach-Object {
+                    $Link = New-Object FakeLink
+                    $Link.href = $_.href
+                    return $Link
+                }
+                return $Response
+            } else {
+                $OriginalCommand = Get-Command Invoke-WebRequest -CommandType Cmdlet
+                $Result = & $OriginalCommand -Uri $Uri
+                $Result | ForEach-Object {
+                    @{
+                        Links=$_.Links
+                    }
+                } | ConvertTo-Json | Set-Content -Path $TapePath
+                return $Result
+            }
+        }
+
+        $Downloads = Get-EmacsDownload
+        $Downloads | Should -Not -Be $null
+        $Downloads.Count | Should -BeGreaterOrEqual 1
+        $Downloads[0].Href | Should -Not -Be $null
+        $Downloads[0].Version | Should -Not -Be $null
+    }
 }
 
 #+END_SRC
@@ -1927,7 +2032,8 @@ Export-ModuleMember `
       'Restart-EmacsDaemon',
       'Get-UnmanagedEmacsDaemons',
 
-      'Invoke-Applet'
+      'Invoke-Applet',
+      'Test-EmacsExe'
   )`
   -Variable @(
       'CackledaemonWD',
