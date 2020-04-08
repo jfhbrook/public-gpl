@@ -1063,14 +1063,6 @@ Describe 'Get-EmacsDownload' {
         Initialize-TestEnvironment
 
         Mock -ModuleName Cackledaemon Invoke-WebRequest {
-            class FakeLink {
-                [string]$href
-            }
-
-            class FakeResponse {
-                [FakeLink[]]$Links
-            }
-
             if (-not (Test-Path '.\Tapes')) {
                 New-Item -Type Directory '.\Tapes'
             }
@@ -1078,13 +1070,7 @@ Describe 'Get-EmacsDownload' {
             $TapePath = Join-Path '.\Tapes' ('{0}.json' -f [uri]::EscapeDataString($Uri))
 
             if (Test-Path $TapePath) {
-                $Response = New-Object FakeResponse
-                $Response.Links = (Get-Content $TapePath | ConvertFrom-Json).Links | ForEach-Object {
-                    $Link = New-Object FakeLink
-                    $Link.href = $_.href
-                    return $Link
-                }
-                return $Response
+                return (Get-Content $TapePath | ConvertFrom-Json)
             } else {
                 $OriginalCommand = Get-Command Invoke-WebRequest -CommandType Cmdlet
                 $Result = & $OriginalCommand -Uri $Uri
