@@ -1,5 +1,5 @@
 
-# Cackledaemon
+# Introduction
 
 > Oh-ho-ho! Swirly Photoshop magic! I bet this thing could release some serious
 > cackledemons!
@@ -73,7 +73,7 @@ newer.
 
     # Copyright 2020 Josh Holbrook
     #
-    # This file is part of Cackledaemon.
+    # This file is part of Cackledaemon and not a part of Emacs.
     #
     # Cackledaemon is free software: you can redistribute it and/or modify
     # it under the terms of the GNU General Public License as published by
