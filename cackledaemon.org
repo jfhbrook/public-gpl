@@ -818,6 +818,7 @@ Describe 'Invoke-LogRotate' {
 
     It 'rotates the logs' {
         Add-Content 'TestDrive:\Cackledaemon\Configuration.ps1' '$LogSize = 1'
+        Add-Content 'TestDrive:\Cackledaemon\Configuration.ps1' '$LogRotate = 2'
 
         Write-LogVerbose 'Testing 1'
 
@@ -853,40 +854,10 @@ Describe 'Invoke-LogRotate' {
         'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -FileContentMatch 'Testing 3'
         'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -Exist
         'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -FileContentMatch 'Testing 2'
-        'TestDrive:\Cackledaemon\Cackledaemon.log.3' | Should -Exist
-        'TestDrive:\Cackledaemon\Cackledaemon.log.3' | Should -FileContentMatch 'Testing 1'
-
-        Write-LogVerbose 'Testing 4'
-        Invoke-LogRotate
-
-        'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Exist
-        'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Not -FileContentMatch 'Testing 4'
-        'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -Exist
-        'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -FileContentMatch 'Testing 4'
-        'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -Exist
-        'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -FileContentMatch 'Testing 3'
-        'TestDrive:\Cackledaemon\Cackledaemon.log.3' | Should -Exist
-        'TestDrive:\Cackledaemon\Cackledaemon.log.3' | Should -FileContentMatch 'Testing 2'
-        'TestDrive:\Cackledaemon\Cackledaemon.log.4' | Should -Exist
-        'TestDrive:\Cackledaemon\Cackledaemon.log.4' | Should -FileContentMatch 'Testing 1'
-
-        Write-LogVerbose 'Testing 5'
-        Invoke-LogRotate
-
-        'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Exist
-        'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Not -FileContentMatch 'Testing 5'
-        'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -Exist
-        'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -FileContentMatch 'Testing 5'
-        'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -Exist
-        'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -FileContentMatch 'Testing 4'
-        'TestDrive:\Cackledaemon\Cackledaemon.log.3' | Should -Exist
-        'TestDrive:\Cackledaemon\Cackledaemon.log.3' | Should -FileContentMatch 'Testing 3'
-        'TestDrive:\Cackledaemon\Cackledaemon.log.4' | Should -Exist
-        'TestDrive:\Cackledaemon\Cackledaemon.log.4' | Should -FileContentMatch 'Testing 2'
-        'TestDrive:\Cackledaemon\Cackledaemon.log.5' | Should -Not -Exist
-
+        'TestDrive:\Cackledaemon\Cackledaemon.log.3' | Should -Not -Exist
     }
 }
+
 #+END_SRC
 
 We can also use a job to manage log rotation.
