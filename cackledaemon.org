@@ -95,8 +95,8 @@ function New-CackledaemonWD {
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
 function Initialize-TestEnvironment {
-    $Env:AppData = 'TestDrive:\AppData'
-    $Env:ProgramFiles = 'TestDrive:\Program Files'
+    $Env:AppData = "$TestDrive\AppData"
+    $Env:ProgramFiles = "$TestDrive\Program Files"
 
     New-Item $Env:AppData
     New-Item $Env:ProgramFiles
@@ -104,7 +104,7 @@ function Initialize-TestEnvironment {
     Remove-Module Cackledaemon -ErrorAction 'SilentlyContinue'
     Import-Module .\Cackledaemon\Cackledaemon.psm1
 
-    $Global:CackledaemonWD = 'TestDrive:\Cackledaemon'
+    $Global:CackledaemonWD = "$TestDrive\Cackledaemon"
     $Global:CackledaemonConfigLocation = Join-Path $CackledaemonWD 'Configuration.ps1'
 
     New-CackledaemonWD
@@ -152,14 +152,14 @@ Describe 'Configuration.ps1' {
 
         . $CackledaemonConfigLocation
 
-        $WorkspaceDirectory | Should -Be 'TestDrive:\Cackledaemon\Workspace'
+        $WorkspaceDirectory | Should -Be "$TestDrive\Cackledaemon\Workspace"
         $EmacsDownloadsEndpoint | Should -Be 'https://ftp.gnu.org/gnu/emacs/windows/'
-        $EmacsInstallLocation | Should -Be 'TestDrive:\Program Files\emacs'
-        $StartMenuPath | Should -Be 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
+        $EmacsInstallLocation | Should -Be "$TestDrive\Program Files\emacs"
+        $StartMenuPath | Should -Be "$TestDrive\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs"
 
-        $CackledaemonLogFile | Should -Be 'TestDrive:\Cackledaemon\Cackledaemon.log'
-        $EmacsStdOutLogFile | Should -Be 'TestDrive:\Cackledaemon\EmacsStdOut.log'
-        $EmacsStdErrLogFile | Should -Be 'TestDrive:\Cackledaemon\EmacsStdErr.log'
+        $CackledaemonLogFile | Should -Be "$TestDrive\Cackledaemon\Cackledaemon.log"
+        $EmacsStdOutLogFile | Should -Be "$TestDrive\Cackledaemon\EmacsStdOut.log"
+        $EmacsStdErrLogFile | Should -Be "$TestDrive\Cackledaemon\EmacsStdErr.log"
         $LogSize | Should -Be 1mb
         $LogRotate | Should -Be 4
         $LogCheckTime | Should -Be 60
@@ -830,6 +830,8 @@ function Enable-LogRotateJob {
     param()
 
     Enable-CackledaemonJob 'LogRotateJob' {
+        . $CackledaemonConfigLocation
+
         while ($True) {
             Invoke-LogRotate
             Write-LogDebug ('LogRotateJob sleeping for {0} seconds.' -f $LogCheckTime)
@@ -916,7 +918,7 @@ Describe 'Test-EmacsExe' {
 
         Assert-MockCalled -ModuleName Cackledaemon Test-Path `
           -Times 1 `
-          -ParameterFilter { $Path -eq 'TestDrive:\Program Files\emacs\bin\emacs.exe'}
+          -ParameterFilter { $Path -eq "$TestDrive\Program Files\emacs\bin\emacs.exe"}
     }
 }
 
@@ -927,8 +929,8 @@ represent these versions and to do basic comparisons between them.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 class Version : IComparable {
-    [int64]$Major
-    [int64]$Minor
+    [int]$Major
+    [int]$Minor
 
     Version([int64]$Major, [int64]$Minor) {
         $this.Major = $Major
@@ -954,6 +956,17 @@ class Version : IComparable {
             return 0
         }
     }
+}
+
+function New-Version {
+    param(
+        [Parameter(Position=0)]
+        [int]$Major,
+        [Parameter(Position=1)]
+        [int]$Minor
+    )
+
+    return New-Object Version $Major, $Minor
 }
 
 #+END_SRC
@@ -997,7 +1010,7 @@ For more information about these matters, see the file named COPYING.'
             Assert-MockCalled -ModuleName Cackledaemon Test-EmacsExe -Times 1
             Assert-MockCalled -ModuleName Cackledaemon Invoke-Expression `
               -Times 1 `
-              -ParameterFilter { $Command -eq 'TestDrive:\Program Files\emacs\bin\emacs.exe --version' }
+              -ParameterFilter { $Command -eq "$TestDrive\Program Files\emacs\bin\emacs.exe --version" }
         }
     }
 }
@@ -1068,12 +1081,12 @@ Describe 'Get-EmacsDownload' {
             }
 
             $TapePath = Join-Path '.\Tapes' ('{0}.json' -f [uri]::EscapeDataString($Uri))
+            $Curl = Get-Command Invoke-WebRequest -CommandType Cmdlet
 
             if (Test-Path $TapePath) {
                 return (Get-Content $TapePath | ConvertFrom-Json)
             } else {
-                $OriginalCommand = Get-Command Invoke-WebRequest -CommandType Cmdlet
-                $Result = & $OriginalCommand -Uri $Uri
+                $Result = & $Curl $Uri
                 $Result | ForEach-Object {
                     @{
                         Links=$_.Links
@@ -1105,9 +1118,9 @@ class Workspace {
     [System.IO.DirectoryInfo]$Backups
 
     Workspace([string]$Path) {
-        $ArchivesPath = Join-Path $Path 'archives'
-        $InstallsPath = Join-Path $Path 'installs'
-        $BackupsPath = Join-Path $Path 'backups'
+        $ArchivesPath = Join-Path $Path 'Archives'
+        $InstallsPath = Join-Path $Path 'Installs'
+        $BackupsPath = Join-Path $Path 'Backups'
 
         $this.Root = Get-Item $Path
         $this.Archives = Get-Item $ArchivesPath
@@ -1115,32 +1128,32 @@ class Workspace {
         $this.Backups = Get-Item $BackupsPath
     }
 
-    GetKey([Version]$Version) {
-        'emacs-{0}.{1}-x86_64.zip' -f $Version.Major, $Version.Minor
+    [string]GetKey([Version]$Version) {
+        return 'emacs-{0}.{1}-x86_64' -f $Version.Major, $Version.Minor
     }
 
-    GetArchivePath([Version]$Version) {
-        Join-Path $this.Archives $this.GetKey($Version)
+    [string]GetArchivePath([Version]$Version) {
+        return Join-Path $this.Archives ('{0}.zip' -f $this.GetKey($Version))
     }
 
-    TestArchive([Version]$Version) {
-        Test-Item $this.GetArchivePath($Version)
+    [boolean]TestArchive([Version]$Version) {
+        return Test-Item $this.GetArchivePath($Version)
     }
 
-    GetArchive([Version]$Version) {
-        Get-Item $this.GetArchivePath($Version)
+    [System.IO.FileInfo]GetArchive([Version]$Version) {
+        return Get-Item $this.GetArchivePath($Version)
     }
 
-    GetInstallPath([Version]$Version) {
-        Join-Path $this.Installs $this.GetKey($Version)
+    [string]GetInstallPath([Version]$Version) {
+        return Join-Path $this.Installs $this.GetKey($Version)
     }
 
-    TestInstall([Version]$Version) {
-        Test-Item $this.GetInstallPath($Version)
+    [boolean]TestInstall([Version]$Version) {
+        return Test-Item $this.GetInstallPath($Version)
     }
 
-    GetInstall([Version]$Version) {
-        Get-Item $this.GetInstallPath($Version)
+    [System.IO.FileInfo]GetInstall([Version]$Version) {
+        return Get-Item $this.GetInstallPath($Version)
     }
 
     Clear() {
@@ -1166,13 +1179,15 @@ function Get-Workspace {
 function New-Workspace {
     . $CackledaemonConfigLocation
 
-    $ArchivesPath = Join-Path $WorkspaceDirectory 'archives'
-    $InstallsPath = Join-Path $WorkspaceDirectory 'installs'
-    $BackupsPath = Join-Path $WorkspaceDirectory 'backups'
+    $ArchivesPath = Join-Path $WorkspaceDirectory 'Archives'
+    $InstallsPath = Join-Path $WorkspaceDirectory 'Installs'
+    $BackupsPath = Join-Path $WorkspaceDirectory 'Backups'
 
-    New-Item -Type Directory $ArchivesPath
-    New-Item -Type Directory $InstallsPath
-    New-Item -Type Directory $BackupsPath
+    New-Item -Type Directory $WorkspaceDirectory | Out-Null
+
+    New-Item -Type Directory $ArchivesPath | Out-Null
+    New-Item -Type Directory $InstallsPath | Out-Null
+    New-Item -Type Directory $BackupsPath | Out-Null
 
     return New-Object Workspace $WorkspaceDirectory
 }
@@ -1183,6 +1198,28 @@ function Remove-Workspace {
     Remove-Item $Workspace.Root -Recurse
 }
 
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Workspace' {
+    $TestVersion = New-Version 26 3
+
+    Initialize-TestEnvironment
+    $TestWorkspace = New-Workspace
+
+    Write-Host $TestWorkspace
+
+    It 'contains the expected directories' {
+        'TestDrive:\Cackledaemon\Workspace' | Should -Exist
+        'TestDrive:\Cackledaemon\Workspace\Archives' | Should -Exist
+        'TestDrive:\Cackledaemon\Workspace\Installs' | Should -Exist
+        'TestDrive:\Cackledaemon\Workspace\Backups' | Should -Exist
+    }
+
+    It 'can generate a key from a version' {
+        $TestWorkspace.GetKey($TestVersion) | Should -Be 'emacs-26.3-x86_64'
+    }
+}
 #+END_SRC
 
 ** Downloading and Extracting
@@ -1976,6 +2013,8 @@ Export-ModuleMember `
   -Function @(
       'New-CackledaemonWD',
       'Get-FileTypeAssociationsConfig',
+
+      'New-Version',
 
       'Write-Log',
       'Write-LogDebug',
