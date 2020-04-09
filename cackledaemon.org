@@ -1000,6 +1000,10 @@ class Version : IComparable {
             return 0
         }
     }
+
+    [string]ToString() {
+        return 'v{0}.{1}' -f $this.Major, $this.Minor
+    }
 }
 
 function New-Version {
@@ -1071,16 +1075,11 @@ Emacs hosts downloads on an Apache webserver running [[https://trisquel.info/][T
 personally find charming. It turns out that Apache directory listings can be
 casually scraped by PowerShell.
 
-Note that Download isn't comparable because there isn't a use case for comparing
-downloads with other downloads, and while the IComparable interface is game to
-compare disparate objects, PowerShell is not. Therefore, we always compare the
-Version properties.
-
 It's also worth noting that Cackledaemon only attempts to handle native Windows
 x86_64 builds. The first major version of Emacs with such builds is Emacs 25.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-class Download {
+class Download : IComparable {
     [Version]$Version
     [string]$Href
 
@@ -1088,6 +1087,30 @@ class Download {
         $this.Version = New-Object Version $Major, $Minor
         $this.Href = $Href
     }
+
+    [int]CompareTo([object]$Other) {
+        if ($Other -eq $null) {
+            return 1
+        }
+
+        $Other = [Download]$Other
+
+        return $this.Version.CompareTo($Other.Version)
+    }
+
+    [string]ToString() {
+        return 'Download($Version={0}; $Href={1})' -f $this.Version, $this.Href
+    }
+}
+
+function New-Download {
+    param(
+        [int]$Major,
+        [int]$Minor,
+        [string]$Href
+    )
+
+    New-Object Download $Major, $Minor, $Href
 }
 
 function Get-EmacsDownload {
@@ -1105,7 +1128,7 @@ function Get-EmacsDownload {
             (Invoke-WebRequest ($EmacsDownloadsEndpoint + $MajorPathPart)).Links | ForEach-Object {
                  if ($_.href -match '^emacs-(\d+)\.(\d+)-x86_64\.zip$') {
                      $Href = $EmacsDownloadsEndpoint + $MajorPathPart + $_.href
-                     return New-Object Download $Matches[1], $Matches[2], $Href
+                     return New-Download $Matches[1] $Matches[2] $Href
                  }
             }
         }
@@ -1155,8 +1178,35 @@ Describe 'Get-EmacsDownload' {
         $Downloads = Get-EmacsDownload
         $Downloads | Should -Not -Be $null
         $Downloads.Count | Should -BeGreaterOrEqual 1
-        $Downloads[0].Href | Should -Not -Be $null
-        $Downloads[0].Version | Should -Not -Be $null
+        $Downloads | ForEach-Object {
+            $_.Href | Should -Not -Be $null
+            $_.Version | Should -Not -Be $null
+        }
+    }
+}
+
+Describe 'Get-LatestEmacsDownload' {
+    BeforeEach {
+        Initialize-TestEnvironment
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    It 'reports the latest emacs download' {
+        Mock -ModuleName Cackledaemon Get-EmacsDownload {
+            New-Download 1 3 '1.3'
+            New-Download 2 1 '2.1'
+            New-Download 2 2 '2.2'
+        }
+
+        $LatestDownload = Get-LatestEmacsDownload
+        $LatestDownload | Should -Not -Be $null
+        $LatestDownload.Href | Should -Not -Be $null
+        $LatestDownload.Version | Should -Not -Be $null
+        $LatestDownload.Version.Major | Should -Be 2
+        $LatestDownload.Version.Minor | Should -Be 2
     }
 }
 
@@ -2076,6 +2126,7 @@ Export-ModuleMember `
       'Get-FileTypeAssociationsConfig',
 
       'New-Version',
+      'New-Download',
 
       'Write-Log',
       'Write-LogDebug',
