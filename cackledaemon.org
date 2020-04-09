@@ -95,6 +95,10 @@ function New-CackledaemonWD {
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
 function Initialize-TestEnvironment {
+    $Global:OriginalAppData = $Env:AppData
+    $Global:OriginalProgramFiles = $Env:ProgramFiles
+    $Global:OriginalModulePath = (Get-Module 'Cackledaemon').Path
+
     $Env:AppData = "$TestDrive\AppData"
     $Env:ProgramFiles = "$TestDrive\Program Files"
 
@@ -105,15 +109,36 @@ function Initialize-TestEnvironment {
     Import-Module .\Cackledaemon\Cackledaemon.psm1
 
     $Global:CackledaemonWD = "$TestDrive\Cackledaemon"
-    $Global:CackledaemonConfigLocation = Join-Path $CackledaemonWD 'Configuration.ps1'
+    $Global:CackledaemonConfigLocation = "$TestDrive\Cackledaemon\Configuration.ps1"
 
     New-CackledaemonWD
 }
 
-Describe "New-CackledaemonWD" {
-    It "creates a new and initialized working directory" {
-        Initialize-TestEnvironment
+function Restore-StandardEnvironment {
+    $Env:AppData = $Global:OriginalAppData
+    $Env:ProgramFiles = $Global:OriginalProgramFiles
 
+    Remove-Item "$TestDrive\AppData"
+    Remove-Item "$TestDrive\Program Files"
+    Remove-Item -Recurse "$TestDrive\Cackledaemon"
+
+    Remove-Module Cackledaemon
+
+    if ($Global:OriginalModulePath) {
+        Import-Module $Global:OriginalModulePath
+    }
+}
+
+Describe "New-CackledaemonWD" {
+    BeforeEach {
+        Initialize-TestEnvironment
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    It "creates a new and initialized working directory" {
         'TestDrive:\Cackledaemon' | Should -Exist
         'TestDrive:\Cackledaemon\Configuration.ps1' | Should -Exist
         'TestDrive:\Cackledaemon\Shortcuts.csv' | Should -Exist
@@ -147,9 +172,15 @@ $NotifyTimeout = 5000
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
 Describe 'Configuration.ps1' {
-    It 'defines base settings' {
+    BeforeEach {
         Initialize-TestEnvironment
+    }
 
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    It 'defines base settings' {
         . $CackledaemonConfigLocation
 
         $WorkspaceDirectory | Should -Be "$TestDrive\Cackledaemon\Workspace"
@@ -229,9 +260,15 @@ function Get-ShortcutsConfig {
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
 Describe 'Get-ShortcutsConfig' {
-    It 'loads shortcuts settings' {
+    BeforeEach {
         Initialize-TestEnvironment
+    }
 
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    It 'loads shortcuts settings' {
         $Config = Get-ShortcutsConfig
 
         $Config | Should -Not -Be $null
@@ -289,9 +326,15 @@ function Get-FileTypeAssociationsConfig {
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
 Describe 'Get-FileTypeAssociationsConfig' {
-    It 'loads file type association settings' {
+    BeforeEach {
         Initialize-TestEnvironment
+    }
 
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    It 'loads file type association settings' {
         $Config = Get-FileTypeAssociationsConfig
 
         $Config | Should -Not -Be $null
@@ -348,10 +391,16 @@ function Enable-CackledaemonJob {
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
 Describe "Enable-CackledaemonJob" {
+    BeforeEach {
+        Initialize-TestEnvironment
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
     Context "when a job doesn't exist" {
         It "creates a new job" {
-            Initialize-TestEnvironment
-
             Stop-Job -Name 'testJob' -ErrorAction SilentlyContinue
             Remove-Job -Name 'testJob' -ErrorAction SilentlyContinue
 
@@ -367,8 +416,6 @@ Describe "Enable-CackledaemonJob" {
 
     Context "when a job already exists" {
         It 'disables and then creates a new job' {
-            Initialize-TestEnvironment
-
             Stop-Job -Name 'testJob' -ErrorAction SilentlyContinue
             Remove-Job -Name 'testJob' -ErrorAction SilentlyContinue
 
@@ -595,10 +642,16 @@ function Write-LogError {
 $TimestampRegexp = '\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{7}-\d{2}:\d{2}\]'
 
 Describe 'Write-Log' {
+    BeforeEach {
+        Initialize-TestEnvironment
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
     Context 'when the configuration is missing' {
         It 'warns and does nothing' {
-            Initialize-TestEnvironment
-
             Remove-Item $CackledaemonConfigLocation
 
             Write-Log -Message "test log" -WarningVariable Warnings 3> $null
@@ -613,8 +666,6 @@ Describe 'Write-Log' {
 
     Context 'when called with an unrecognized level' {
         It 'warns and then logs at the warning level' {
-            Initialize-TestEnvironment
-
             Write-Log -Level 'InvalidLevel' -Message 'Test Message' -WarningVariable Warnings 3> $null
 
             'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -FileContentMatch "^$TimestampRegexp Warning: Write-Log called with unrecognized level InvalidLevel$"
@@ -631,21 +682,33 @@ Describe 'Write-Log' {
 
 @('Debug', 'Verbose', 'Information', 'Warning') | ForEach-Object {
     Describe ('Write-Log{0}' -f $_) {
-        It ('logs at the {0} level' -f $_) {
+        BeforeEach {
             Initialize-TestEnvironment
+        }
 
+        AfterEach {
+            Restore-StandardEnvironment
+        }
+
+        It ('logs at the {0} level' -f $_) {
             Invoke-Expression "Write-Log${_} 'Test message'" 3> $null
 
-            'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -FileContentMatch "^$TimestampRegexp ${_}: Test message$"
+            "$TestDrive/Cackledaemon/Cackledaemon.log" | Should -FileContentMatch "^$TimestampRegexp ${_}: Test message$"
         }
     }
 }
 
 Describe 'Write-LogError' {
+    BeforeEach {
+        Initialize-TestEnvironment
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
     Context 'when called with an exception type' {
         It 'logs an error' {
-            Initialize-TestEnvironment
-
             $Exception = New-Object Exception 'Test exception'
 
             Write-LogError `
@@ -670,8 +733,6 @@ Describe 'Write-LogError' {
 
     Context 'when called without an exception type' {
         It 'logs an error' {
-            Initialize-TestEnvironment
-
             Write-LogError `
               'Test message' `
               -Category 'InvalidOperation' `
@@ -747,9 +808,15 @@ function Invoke-LogRotate {
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
 Describe 'Invoke-LogRotate' {
-    It 'rotates the logs' {
+    BeforeEach {
         Initialize-TestEnvironment
+    }
 
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    It 'rotates the logs' {
         Add-Content 'TestDrive:\Cackledaemon\Configuration.ps1' '$LogSize = 1'
 
         Write-LogVerbose 'Testing 1'
@@ -909,9 +976,15 @@ function Test-EmacsExe {
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
 Describe 'Test-EmacsExe' {
-    It 'searches for emacs.exe in the correct location' {
+    BeforeEach {
         Initialize-TestEnvironment
+    }
 
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    It 'searches for emacs.exe in the correct location' {
         Mock -ModuleName Cackledaemon Test-Path { $True }
 
         Test-EmacsExe | Should -Be $True
@@ -982,7 +1055,7 @@ function Get-EmacsExeVersion {
 
         $EmacsExe = Join-Path $EmacsInstallLocation 'bin\emacs.exe'
         if ((Invoke-Expression "$EmacsExe --version")[0] -match '^GNU Emacs (\d+)\.(\d+)$') {
-            New-Object Version $Matches[1], $Matches[2]
+            New-Version $Matches[1], $Matches[2]
         }
     }
 }
@@ -991,10 +1064,16 @@ function Get-EmacsExeVersion {
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
 Describe 'Get-EmacsExeVersion' {
+    BeforeEach {
+        Initialize-TestEnvironment
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
     Context 'when emacs is installed' {
         It 'returns a version' {
-            Initialize-TestEnvironment
-
             Mock -ModuleName Cackledaemon Test-EmacsExe { $True }
             Mock -ModuleName Cackledaemon Invoke-Expression {
                 return 'GNU Emacs 26.2
@@ -1072,9 +1151,15 @@ This test was *way* too difficult to write lmao!
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
 Describe 'Get-EmacsDownload' {
-    It 'fetches emacs downloads' {
+    BeforeEach {
         Initialize-TestEnvironment
+    }
 
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    It 'fetches emacs downloads' {
         Mock -ModuleName Cackledaemon Invoke-WebRequest {
             if (-not (Test-Path '.\Tapes')) {
                 New-Item -Type Directory '.\Tapes'
@@ -1203,11 +1288,16 @@ function Remove-Workspace {
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
 Describe 'Workspace' {
     $TestVersion = New-Version 26 3
+    $TestWorkspace = $null
+    BeforeEach {
+        Initialize-TestEnvironment
+        $TestWorkspace = New-Workspace
+    }
 
-    Initialize-TestEnvironment
-    $TestWorkspace = New-Workspace
-
-    Write-Host $TestWorkspace
+    AfterEach {
+        Remove-Workspace
+        Restore-StandardEnvironment
+    }
 
     It 'contains the expected directories' {
         'TestDrive:\Cackledaemon\Workspace' | Should -Exist
@@ -2204,18 +2294,7 @@ task Clean {
 ** Testing Cackledaemon
 #+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
 task Test {
-    $Global:OriginalAppData = $Env:AppData
-    $Global:OriginalProgramFiles = $Env:ProgramFiles
-    $Global:OriginalModulePath = (Get-Module 'Cackledaemon').Path
-
-    Invoke-Pester
-
-    $Env:AppData = $Global:OriginalAppData
-    $Env:ProgramFiles = $Global:OriginalProgramFiles
-    Remove-Module Cackledaemon
-    if ($Global:OriginalModulePath) {
-        Import-Module $Global:OriginalModulePath
-    }
+    powershell -Command Invoke-Pester
 }
 
 #+END_SRC
