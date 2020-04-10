@@ -176,6 +176,9 @@ $LogSize = 1mb
 $LogRotate = 4
 $LogCheckTime = 60  # Seconds
 
+# Daemon Management Settings
+$PidFile = Join-Path $CackledaemonWD 'DaemonPidFile.json'
+
 # Applet Settings
 $NotifyTimeout = 5000
 #+END_SRC
@@ -2273,28 +2276,96 @@ object to and from a JSON file inside the working directory. We only need to
 save the ID, but storing the entire process object is easier.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-
-$PidFile = Join-Path $CackledaemonWD 'DaemonPidFile.json'
-
-function Write-EmacsProcessToPidFile {
+function Write-ProcessToPidFile {
     param([System.Diagnostics.Process]$Process)
+
+    . $CackledaemonConfigLocation
 
     ($Process).Id | ConvertTo-Json | Out-File $PidFile
 }
 
-function Get-EmacsProcessFromPidFile {
+function Get-ProcessFromPidFile {
+    . $CackledaemonConfigLocation
+
     if (-not (Test-Path $PidFile)) {
         return $null
     }
 
     $Id = (Get-Content $PidFile | ConvertFrom-Json)
 
-    if (-not $Id) {
+    $Process = Get-Process -Id $Id -ErrorAction SilentlyContinue
+
+    if (-not $Process) {
         Remove-Item $PidFile
-        return $null
     }
 
-    return Get-Process -Id $Id -ErrorAction SilentlyContinue
+    return $Process
+}
+
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Write-ProcessToPidFile' {
+    $TestProcess = $null
+    BeforeEach {
+        Initialize-TestEnvironment
+        $TestProcess = (Get-Process)[0]
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    It 'writes a process ID to the PID file' {
+        Write-ProcessToPidFile $TestProcess
+        'TestDrive:\Cackledaemon\DaemonPidFile.json' | Should -Exist
+        'TestDrive:\Cackledaemon\DaemonPidFile.json' | Should -FileContentMatch $TestProcess.Id
+    }
+}
+
+Describe 'Get-ProcessFromPidFile' {
+    BeforeEach {
+        Initialize-TestEnvironment
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    Context 'when the PID file is current' {
+        $TestProcess = $null
+
+        BeforeEach {
+            $TestProcess = (Get-Process)[0]
+
+            Write-ProcessToPidFile $TestProcess
+        }
+
+        It 'reads a process ID from the PID file' {
+            $Process = Get-ProcessFromPidFile
+            $Process.Id | Should -Be $TestProcess.Id
+        }
+    }
+
+    Context 'when the PID file is stale' {
+        BeforeEach {
+            Set-Content -Path 'TestDrive:\Cackledaemon\DaemonPidFile.json' -Value '123456789'
+            Get-Process -Id 123456789 -ErrorAction SilentlyContinue | Should -Be $null
+        }
+
+        It 'removes the PID file and returns null' {
+            $Process = Get-ProcessFromPidFile
+            $Process | Should -Be $null
+            'TestDrive:\Cackledaemon\DaemonPidFile.json' | Should -Not -Exist
+        }
+    }
+
+    Context 'when there is no PID file' {
+        It 'returns null' {
+            $Process = Get-ProcessFromPidFile
+            $Process | Should -Be $null
+        }
+    }
 }
 
 #+END_SRC
@@ -2692,10 +2763,13 @@ Export-ModuleMember `
 
       'New-ServerFileDirectory',
       'Test-ServerFileDirectory',
-      'Get-ServerFileDirectory',
       'Clear-ServerFileDirectory',
 
       'Set-Shortcut',
+
+      'Write-ProcessToPidFile',
+
+      'Get-ProcessFromPidFile',
 
       'Update-EmacsInstall',
 
