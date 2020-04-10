@@ -123,8 +123,8 @@ function Restore-StandardEnvironment {
     $Env:ProgramFiles = $Global:OriginalProgramFiles
     $Env:UserProfile = $Global:OriginalUserProfile
 
-    Remove-Item "$TestDrive\AppData"
-    Remove-Item "$TestDrive\Program Files"
+    Remove-Item -Recurse "$TestDrive\AppData"
+    Remove-Item -Recurse "$TestDrive\Program Files"
     Remove-Item -Recurse "$TestDrive\UserProfile"
     Remove-Item -Recurse "$TestDrive\Cackledaemon"
 
@@ -1886,7 +1886,49 @@ Emacs's ~addpm.exe~ creates a shortcut to ~emacs.exe~ in a sub-folder called
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Get-StartMenuItems {
     . $CackledaemonConfigLocation
-    Get-ChildItem -Path $StartMenuPath
+
+    Get-ChildItem -Path $StartMenuPath -ErrorAction SilentlyContinue
+}
+
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Get-StartMenuItems' {
+    BeforeEach {
+        Initialize-TestEnvironment
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    Context 'when there are already start menu items' {
+        $TestShortcut = $null
+        BeforeEach {
+            New-Item -Type Directory 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
+            $TestShortcut = New-Item 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\test.lnk'
+        }
+
+        AfterEach {
+            Remove-Item -Recurse 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
+        }
+
+        It 'should get start menu items' {
+            $Items = Get-StartMenuItems
+
+            $Items.Count | Should -Be 1
+
+            $Items | ForEach-Object { $_.FullName } | Should -Contain $TestShortcut.FullName
+        }
+    }
+
+    Context "when there isn't a start menu folder" {
+        It 'should yield zero items' {
+            $Items = Get-StartMenuItems
+
+            $Items.Count | Should -Be 0
+        }
+    }
 }
 
 #+END_SRC
@@ -1907,7 +1949,7 @@ function Set-Shortcut {
         [string]$ShortcutPath,
         [string]$TargetPath,
         [string[]]$Argumentlist = @(),
-        [string]$WorkingDirectory = $Env:USERPROFILE,
+        [string]$WorkingDirectory = $Env:UserProfile,
         [string]$Description
     )
 
@@ -1925,6 +1967,54 @@ function Set-Shortcut {
     $Shortcut.Save()
 }
 
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Get-WShell' {
+    It 'returns a singleton WShell' {
+        $Shell = Get-WShell
+
+        $Shell | Should -Not -Be $null
+
+        Get-Wshell | Should -BeExactly $Shell
+    }
+}
+
+Describe 'Set-Shortcut' {
+    It 'should create shortcuts' {
+        Mock -Module Cackledaemon Get-WShell {
+            class FakeShell {
+                [FakeShortcut]CreateShortcut([string]$Path) {
+                    class FakeShortcut {
+                        [string]$ShortcutPath
+                        [string]$TargetPath
+                        [string[]]$Arguments
+                        [string]$WorkingDirectory
+                        [string]$Description
+
+                        Save() {
+                            $this.ShortcutPath | Should -Be 'shortcut path'
+                            $this.TargetPath | Should -Be 'target path'
+                            $this.Arguments | Should -Be @()
+                            $this.Description | Should -Be 'description'
+                        }
+                    }
+
+                    $Shortcut = New-Object FakeShortcut
+                    $Shortcut.ShortcutPath = $Path
+                    return $Shortcut
+                }
+            }
+
+            return New-Object FakeShell
+        }
+
+        Set-Shortcut -ShortcutPath 'shortcut path' -TargetPath 'target path' -Description 'description'
+
+        Assert-MockCalled -Module Cackledaemon Get-WShell -Times 1
+    }
+
+}
 #+END_SRC
 *** Installation
 Given a shortcuts config, we can "install" them by comparing the shortcuts in
@@ -2515,8 +2605,14 @@ Export-ModuleMember `
       'New-CackledaemonWD',
       'Get-FileTypeAssociationsConfig',
 
+      'Get-WShell',
+
       'New-Version',
       'New-Download',
+
+      'Get-StartMenuItems',
+
+      'Set-Shortcut',
 
       'Update-EmacsInstall',
 
