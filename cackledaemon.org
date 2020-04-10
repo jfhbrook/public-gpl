@@ -2517,9 +2517,59 @@ Describe 'Start-EmacsDaemon' {
     }
 
     Context 'when Emacs is running' {
+        BeforeEach {
+            Initialize-TestEnvironment
+        }
+
+        AfterEach {
+            Restore-StandardEnvironment
+        }
+
+        It 'logs an error and exits' {
+            Mock -Module Cackledaemon Get-ProcessFromPidFile { (Get-Process)[0] }
+            Mock -Module Cackledaemon Get-UnmanagedEmacsDaemon {}
+            Mock -Module Cackledaemon Start-Process {}
+            Mock -Module Cackledaemon Write-ProcessToPidFile {}
+            Mock -Module Cackledaemon Wait-Process {}
+
+            Start-EmacsDaemon 2> $null
+
+            Assert-MockCalled -Module Cackledaemon Get-ProcessFromPidFile -Times 1
+            Assert-MockCalled -Module Cackledaemon Get-UnmanagedEmacsDaemon -Times 0
+            Assert-MockCalled -Module Cackledaemon Start-Process -Times 0
+            Assert-MockCalled -Module Cackledaemon Write-ProcessToPidFile -Times 0
+            Assert-MockCalled -Module Cackledaemon Wait-Process -Times 0
+
+            $Error[0].ToString() | Should -Be 'The Emacs daemon is already running and being managed.'
+        }
     }
 
     Context 'when an unmanaged Emacs is running' {
+        BeforeEach {
+            Initialize-TestEnvironment
+        }
+
+        AfterEach {
+            Restore-StandardEnvironment
+        }
+
+        It 'logs an error and exits' {
+            Mock -Module Cackledaemon Get-ProcessFromPidFile { $null }
+            Mock -Module Cackledaemon Get-UnmanagedEmacsDaemon { (Get-Process)[0] }
+            Mock -Module Cackledaemon Start-Process {}
+            Mock -Module Cackledaemon Write-ProcessToPidFile {}
+            Mock -Module Cackledaemon Wait-Process {}
+
+            Start-EmacsDaemon 2> $null
+
+            Assert-MockCalled -Module Cackledaemon Get-ProcessFromPidFile -Times 1
+            Assert-MockCalled -Module Cackledaemon Get-UnmanagedEmacsDaemon -Times 1
+            Assert-MockCalled -Module Cackledaemon Start-Process -Times 0
+            Assert-MockCalled -Module Cackledaemon Write-ProcessToPidFile -Times 0
+            Assert-MockCalled -Module Cackledaemon Wait-Process -Times 0
+
+            $Error[0].ToString() | Should -Be 'An unmanaged Emacs daemon is running.'
+        }
     }
 }
 
