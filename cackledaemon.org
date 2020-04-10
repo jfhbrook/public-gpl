@@ -75,7 +75,7 @@ Cackledaemon needs a place to store configurations, logs and process metadata.
 For this purpose, we create a folder at =$Env:AppData\Cackledaemon=.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-$CackledaemonWD = Join-Path $Env:AppData 'cackledaemon'
+$CackledaemonWD = Join-Path $Env:AppData 'Cackledaemon'
 $CackledaemonConfigLocation = Join-Path $CackledaemonWD 'Configuration.ps1'
 
 function New-CackledaemonWD {
@@ -1589,11 +1589,13 @@ current user or system-wide. We implement the user version because it doesn't
 require admin privileges and leaves this as a choice for individual users.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-
 function Set-EmacsPathEnvVariable {
-    param(
-        [str]$Path
-    )
+    [CmdletBinding()]
+    param()
+
+    . $CackledaemonConfigLocation
+
+    $Path = Join-Path $EmacsInstallLocation 'bin'
 
     $ExistingEmacs = Get-Command 'emacs.exe' -SilentlyContinue
 
@@ -1601,13 +1603,12 @@ function Set-EmacsPathEnvVariable {
         $ExistingEmacsBinDir = Split-Path $ExistingEmacs.Source -Parent
     }
 
-    if ($ExistingEmacsBinDir -eq $Path) {
-        Write-Warning 'An unmanaged Emacs is already installed at ' +
-        ('{0} - this may cause unexpected behavior. ' -f $ExistingEmacsBinDir)
+    if ($ExistingEmacs -and -not ($ExistingEmacsBinDir -eq $Path)) {
+        Write-Warning ('An unmanaged Emacs is already installed at {0} - this may cause unexpected behavior.' -f $ExistingEmacsBinDir)
     }
 
     $PathProperty = (Get-ItemProperty -Path 'HKCU:\Environment' -Name 'Path')
-    $PathParts = $PathProperty.Path.Split(';')
+    $PathParts = $PathProperty.Path.Split(';') | Where-Object { $_ }
 
     $ExistingEmacsPathPart = $PathParts | Where-Object { $_ -eq $Path }
 
@@ -1615,11 +1616,142 @@ function Set-EmacsPathEnvVariable {
         Write-Verbose 'Emacs is already in the PATH - no changes necessary.'
     } else {
         $PathParts += $Path
-        $PathProperty.Path = $PathParts -Join ';'
-        Set-ItemProperty -Path 'HKCU:\Environment' -Name 'Path' $PathProperty
+        $PathProperty.Path = ($PathParts -Join ';') + ';'
+
+        Set-ItemProperty -Path 'HKCU:\Environment' -Name 'Path' -Value $PathProperty
     }
 }
 
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Set-EmacsPathEnvVariable' {
+    $EmacsPath = $null
+
+    BeforeEach {
+        Initialize-TestEnvironment
+        $EmacsPath = "$TestDrive\Program Files\emacs\bin"
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    Context 'when Emacs is not in the PATH' {
+        It 'should add Emacs to the PATH' {
+            Mock -Module Cackledaemon Get-Command { $False }
+            Mock -Module Cackledaemon Get-ItemProperty {
+                class FakePathProperty {
+                    [string]$Path
+                }
+
+                $PathProperty = New-Object FakePathProperty
+                $PathProperty.Path = "$TestDrive\Program Files\CoolProgram\bin;$TestDrive\Program Files (x86)\LameProgram;"
+
+                return $PathProperty
+            }
+            Mock -Module Cackledaemon Set-ItemProperty {
+                $Value.Path | Should -Be "$TestDrive\Program Files\CoolProgram\bin;$TestDrive\Program Files (x86)\LameProgram;$TestDrive\Program Files\emacs\bin;"
+            }
+
+            Set-EmacsPathEnvVariable -WarningVariable Warnings
+
+            $Warnings | Should -Be $null
+
+            Assert-MockCalled -Module Cackledaemon `
+              Get-ItemProperty `
+              -Times 1 `
+              -ParameterFilter {$Path -eq 'HKCU:\Environment' -and $Name -eq 'Path'}
+
+            Assert-MockCalled -Module Cackledaemon `
+              Set-ItemProperty `
+              -Times 1 `
+              -ParameterFilter { $Path -eq 'HKCU:\Environment' -and $Name -eq 'Path' -and -not($Value -eq $null) }
+        }
+    }
+
+    Context 'when Emacs is already in the PATH' {
+        It 'should do nothing' {
+            Mock -Module Cackledaemon Get-Command {
+                class FakeCommand {
+                   [string]$Source
+                }
+
+                $Command = New-Object FakeCommand
+                $Command.Source = "$TestDrive\Program Files\emacs\bin\emacs.exe"
+
+                return $Command
+            }
+            Mock -Module Cackledaemon Get-ItemProperty {
+                class FakePathProperty {
+                    [string]$Path
+                }
+
+                $PathProperty = New-Object FakePathProperty
+                $PathProperty.Path = "$TestDrive\Program Files\CoolProgram\bin;$TestDrive\Program Files\emacs\bin;$TestDrive\Program Files (x86)\LameProgram;"
+
+                return $PathProperty
+            }
+
+            Mock -Module Cackledaemon Set-ItemProperty {}
+
+            Set-EmacsPathEnvVariable -WarningVariable Warnings
+
+            $Warnings | Should -Be $null
+
+            Assert-MockCalled -Module Cackledaemon `
+              Get-ItemProperty `
+              -Times 1 `
+              -ParameterFilter {$Path -eq 'HKCU:\Environment' -and $Name -eq 'Path'}
+
+            Assert-MockCalled -Module Cackledaemon Set-ItemProperty -Times 0
+        }
+    }
+
+    Context 'When an unmanged Emacs is in the PATH' {
+        It 'should warn but add Emacs to the PATH' {
+            Mock -Module Cackledaemon Get-Command {
+                class FakeCommand {
+                   [string]$Source
+                }
+
+                $Command = New-Object FakeCommand
+                $Command.Source = "$TestDrive\Program Files (x86)\emacs\bin\emacs.exe"
+
+                return $Command
+            }
+            Mock -Module Cackledaemon Get-ItemProperty {
+                class FakePathProperty {
+                    [string]$Path
+                }
+
+                $PathProperty = New-Object FakePathProperty
+                $PathProperty.Path = "$TestDrive\Program Files\CoolProgram\bin;$TestDrive\Program Files (x86)\emacs\bin;"
+
+                return $PathProperty
+            }
+            Mock -Module Cackledaemon Set-ItemProperty {
+                $Value.Path | Should -Be "$TestDrive\Program Files\CoolProgram\bin;$TestDrive\Program Files (x86)\emacs\bin;$TestDrive\Program Files\emacs\bin;"
+            }
+
+            Set-EmacsPathEnvVariable -WarningVariable Warnings 3> $null
+
+            $Warnings | Should -Not -Be $null
+            $Warnings.Count | Should -Be 1
+            $Warnings[0].ToString() | Should -Be "An unmanaged Emacs is already installed at $TestDrive\Program Files (x86)\emacs\bin - this may cause unexpected behavior."
+
+            Assert-MockCalled -Module Cackledaemon `
+              Get-ItemProperty `
+              -Times 1 `
+              -ParameterFilter {$Path -eq 'HKCU:\Environment' -and $Name -eq 'Path'}
+
+            Assert-MockCalled -Module Cackledaemon `
+              Set-ItemProperty `
+              -Times 1 `
+              -ParameterFilter { $Path -eq 'HKCU:\Environment' -and $Name -eq 'Path' -and -not($Value -eq $null) }
+        }
+    }
+}
 #+END_SRC
 *** HOME Environment Variable
 Emacs generally tries to find its init files in =$HOME/.emacs.d= but Windows
@@ -1632,6 +1764,9 @@ function Set-HomeEnvVariable {
     Set-ItemProperty -Path 'HKCU:\Environment' -Name 'HOME' $Env:UserProfile
 }
 
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
 #+END_SRC
 ** App Paths Registry Keys
 Windows, in addition to the concept of a user ~Path~, also has the concept of
