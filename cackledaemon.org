@@ -2383,9 +2383,8 @@ the edge case of searching for emacs instances *not* started with the ~--daemon~
 but which have called =(run-server)=.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-
-function Get-UnmanagedEmacsDaemons () {
-    $ManagedProcess = $(Get-EmacsProcessFromPidFile)
+function Get-UnmanagedEmacsDaemon () {
+    $ManagedProcess = Get-ProcessFromPidFile
     return Get-CimInstance -Query "
         SELECT
           ,*
@@ -2411,7 +2410,7 @@ function Start-EmacsDaemon {
 
     . $CackledaemonConfigLocation
 
-    $Process = $(Get-EmacsProcessFromPidFile)
+    $Process = $(Get-ProcessFromPidFile)
 
     if ($Process) {
         Write-LogError `
@@ -2420,7 +2419,7 @@ function Start-EmacsDaemon {
           -CategoryActivity 'Start-EmacsDaemon' `
           -CategoryReason ManagedResourceExistsException
 
-    } elseif ($(Get-UnmanagedEmacsDaemons)) {
+    } elseif (Get-UnmanagedEmacsDaemons) {
         Write-LogError `
           -Message 'An unmanaged Emacs daemon is running.' `
           -Category ResourceExists `
@@ -2437,7 +2436,7 @@ function Start-EmacsDaemon {
           -RedirectStandardError $EmacsStdErrLogFile `
           -PassThru
 
-        Write-EmacsProcessToPidFile $Process
+        Write-ProcessToPidFile $Process
 
         if ($Wait) {
             Write-Verbose 'Waiting for Emacs daemon to exit...'
@@ -2447,6 +2446,75 @@ function Start-EmacsDaemon {
         Write-Verbose 'Done.'
 
         return $Process
+    }
+}
+
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Start-EmacsDaemon' {
+    $TestProcess = $null
+    BeforeEach {
+        Initialize-TestEnvironment
+        $TestProcess = (Get-Process)[0]
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    Context 'when Emacs is not running and -Wait is false' {
+        It 'starts Emacs in the background' {
+            Mock -Module Cackledaemon Get-ProcessFromPidFile { $null }
+            Mock -Module Cackledaemon Get-UnmanagedEmacsDaemons { $null }
+            Mock -Module Cackledaemon Start-Process { $TestProcess }
+            Mock -Module Cackledaemon Write-ProcessToPidFile { $null }
+            Mock -Module Cackledaemon Wait-Process { $TestProcess }
+
+            Start-EmacsDaemon
+
+            Assert-MockCalled -Module Cackledaemon Get-ProcessFromPidFile -Times 1
+            Assert-MockCalled -Module Cackledaemon Get-UnmanagedEmacsDaemon -Times 1
+            Assert-MockCalled -Module Cackledaemon Start-Process -Times 1
+            Assert-MockCalled -Module Cackledaemon Start-Process -Times 1 -ParameterFilter {
+                $RedirectStandardOut -eq "$TestDrive\Cackledaemon\EmacsStdOut.log" -and $RedirectStandardError -eq "$TestDrive\Cackledaemon\EmacsStdError.log"
+            }
+            Assert-MockCalled -Module Cackledaemon Write-ProcessToPidFile -Times 1
+            Assert-MockCalled -Module Cackledaemon Write-ProcessToPidFile -Times 1 -ParameterFilter {
+                $Process -eq $TestProcess
+            }
+            Assert-MockCalled -Module Cackledaemon Wait-Process -Times 0
+        }
+    }
+
+    Context 'when Emacs is not running and -Wait is true' {
+        It 'starts Emacs and then waits' {
+            Mock -Module Cackledaemon Get-ProcessFromPidFile { $null }
+            Mock -Module Cackledaemon Get-UnmanagedEmacsDaemons { $null }
+            Mock -Module Cackledaemon Start-Process { $null }
+            Mock -Module Cackledaemon Write-ProcessToPidFile { $null }
+            Mock -Module Cackledaemon Wait-Process { $TestProcess }
+
+            Start-EmacsDaemon -Wait
+
+            Assert-MockCalled -Module Cackledaemon Get-ProcessFromPidFile -Times 1
+            Assert-MockCalled -Module Cackledaemon Get-UnmanagedEmacsDaemon -Times 1
+            Assert-MockCalled -Module Cackledaemon Start-Process -Times 1
+            Assert-MockCalled -Module Cackledaemon Start-Process -Times 1 -ParameterFilter {
+                $RedirectStandardOut -eq "$TestDrive\Cackledaemon\EmacsStdOut.log" -and $RedirectStandardError -eq "$TestDrive\Cackledaemon\EmacsStdError.log"
+            }
+            Assert-MockCalled -Module Cackledaemon Write-ProcessToPidFile -Times 1
+            Assert-MockCalled -Module Cackledaemon Write-ProcessToPidFile -Times 1 -ParameterFilter {
+                $Process -eq $TestProcess
+            }
+            Assert-MockCalled -Module Cackledaemon Wait-Process -Times 1
+        }
+    }
+
+    Context 'when Emacs is running' {
+    }
+
+    Context 'when an unmanaged Emacs is running' {
     }
 }
 
@@ -2812,7 +2880,7 @@ Export-ModuleMember `
       'Get-EmacsDaemon',
       'Stop-EmacsDaemon',
       'Restart-EmacsDaemon',
-      'Get-UnmanagedEmacsDaemons',
+      'Get-UnmanagedEmacsDaemon',
 
       'Invoke-Applet',
       'Test-EmacsExe'
