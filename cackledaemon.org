@@ -366,7 +366,7 @@ Describe 'Get-FileTypeAssociationsConfig' {
 #+END_SRC
 * Job Management
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-function Enable-CackledaemonJob {
+function Enable-Job {
     [CmdletBinding()]
     param(
         [Parameter(Position=0)]
@@ -379,7 +379,7 @@ function Enable-CackledaemonJob {
 
     if ($Job) {
         Write-LogWarning ('{0} job already exists. Trying to stop and remove...' -f $Name)
-            Disable-CackledaemonJob -Name $Job.Name -ErrorAction Stop
+            Disable-Job -Name $Job.Name -ErrorAction Stop
 
     }
 
@@ -388,7 +388,7 @@ function Enable-CackledaemonJob {
     if ($Job) {
         Write-LogError -Message ('{0} job somehow still exists - not attempting to start a new one.' -f $Name) `
           -Category 'ResourceExists' `
-          -CategoryActivity 'Enable-CackledaemonJob' `
+          -CategoryActivity 'Enable-Job' `
           -CategoryReason 'UnstoppableJobException'
     } else {
         Start-Job `
@@ -403,7 +403,7 @@ function Enable-CackledaemonJob {
 #+END_SRC
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
-Describe "Enable-CackledaemonJob" {
+Describe "Enable-Job" {
     BeforeEach {
         Initialize-TestEnvironment
     }
@@ -417,7 +417,7 @@ Describe "Enable-CackledaemonJob" {
             Stop-Job -Name 'testJob' -ErrorAction SilentlyContinue
             Remove-Job -Name 'testJob' -ErrorAction SilentlyContinue
 
-            Enable-CackledaemonJob "testJob" {} -ErrorAction Stop
+            Enable-Job "testJob" {} -ErrorAction Stop
 
             $Job = Get-Job -Name 'testJob'
             $Job | Should -Not -Be $null
@@ -434,7 +434,7 @@ Describe "Enable-CackledaemonJob" {
 
             Start-Job -Name 'testJob' -ScriptBlock {}
 
-            Enable-CackledaemonJob "testJob" {} -ErrorAction Stop -WarningVariable Warnings 3> $null
+            Enable-Job "testJob" {} -ErrorAction Stop -WarningVariable Warnings 3> $null
 
             $Warnings | Should -Not -Be $null
             $Warnings.Count | Should -Be 1
@@ -454,7 +454,7 @@ Describe "Enable-CackledaemonJob" {
 #+END_SRC
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-function Disable-CackledaemonJob {
+function Disable-Job {
     [CmdletBinding()]
     param(
         [Parameter(Position=0)]
@@ -485,7 +485,7 @@ function Disable-CackledaemonJob {
 #+END_SRC
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
-Describe "Disable-CackledaemonJob" {
+Describe "Disable-Job" {
     Context "when a job exists" {
         It "disables the job" {
             Initialize-TestEnvironment
@@ -495,7 +495,7 @@ Describe "Disable-CackledaemonJob" {
 
             Start-Job -Name 'testJob' -ScriptBlock {}
 
-            Disable-CackledaemonJob "testJob" -ErrorAction Stop
+            Disable-Job "testJob" -ErrorAction Stop
 
             $Job = Get-Job -Name 'testJob' -ErrorAction SilentlyContinue
             $Job | Should -Be $null
@@ -509,7 +509,7 @@ Describe "Disable-CackledaemonJob" {
             Stop-Job -Name 'testJob' -ErrorAction SilentlyContinue
             Remove-Job -Name 'testJob' -ErrorAction SilentlyContinue
 
-            Disable-CackledaemonJob "testJob" -ErrorAction Stop -WarningVariable Warnings 3> $null
+            Disable-Job "testJob" -ErrorAction Stop -WarningVariable Warnings 3> $null
 
             $Warnings | Should -Not -Be $null
             $Warnings.length | Should -Be 1
@@ -880,7 +880,7 @@ function Enable-LogRotateJob {
     [CmdletBinding()]
     param()
 
-    Enable-CackledaemonJob 'LogRotateJob' {
+    Enable-Job 'LogRotateJob' {
         . $CackledaemonConfigLocation
 
         while ($True) {
@@ -895,7 +895,7 @@ function Disable-LogRotateJob {
     [CmdletBinding()]
     param()
 
-    Disable-CackledaemonJob 'LogRotateJob'
+    Disable-Job 'LogRotateJob'
 }
 
 #+END_SRC
@@ -2944,8 +2944,8 @@ Export-ModuleMember `
       'Write-LogWarning',
       'Write-LogError',
 
-      'Enable-CackledaemonJob',
-      'Disable-CackledaemonJob',
+      'Enable-Job',
+      'Disable-Job',
 
       'Get-Workspace',
       'New-Workspace',
