@@ -164,6 +164,10 @@ $EmacsDownloadsEndpoint = 'https://ftp.gnu.org/gnu/emacs/windows/'
 $EmacsInstallLocation = Join-Path $Env:ProgramFiles 'emacs'
 $StartMenuPath = Join-Path $Env:AppData 'Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
 
+# Emacs Settings
+$HomeDirectory = $Env:UserProfile
+$ServerFileDirectory = Join-Path $Env:UserProfile '.emacs.d/server'
+
 # Logging Settings
 $CackledaemonLogFile = Join-Path $CackledaemonWD 'Cackledaemon.log'
 $EmacsStdOutLogFile = Join-Path $CackledaemonWD 'EmacsStdOut.log'
@@ -1767,7 +1771,9 @@ but in practice most people want to set =$Env:HOME= to =$Env:UserProfile=.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Set-HomeEnvVariable {
-    Set-ItemProperty -Path 'HKCU:\Environment' -Name 'HOME' -Value $Env:UserProfile
+    . $CackledaemonConfigLocation
+
+    Set-ItemProperty -Path 'HKCU:\Environment' -Name 'HOME' -Value $HomeDirectory
 }
 
 #+END_SRC
@@ -2077,6 +2083,7 @@ Describe 'Install-Shortcuts' {
         'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\Emacs Client.lnk' | Should -Exist
     }
 }
+
 #+END_SRC
 ** File Type Associations
 File type associations in Windows are [[https://twitter.com/jfhbrook/status/1245917952316039169]["complicated"]] and the documentation for
@@ -2177,43 +2184,85 @@ generally speaking you should just ensure that =~/.emacs.d= exists where it's
 expected.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-$DefaultServerFileDirectory = Join-Path $Env:UserProfile '.emacs.d/server'
-
-function Get-ServerFileDirectory {
-    [CmdletBinding()]
-    param(
-        [string]$Path = $DefaultServerFileDirectory
-    )
-
-    Get-Item $Path
-}
-
 function Test-ServerFileDirectory {
-    [CmdletBinding()]
-    param(
-        [string]$Path = $DefaultServerFileDirectory
-    )
+    . $CackledaemonConfigLocation
 
-    Test-Item $Path
+    Test-Path $ServerFileDirectory
 }
 
 function New-ServerFileDirectory {
-    [CmdletBinding()]
-    param(
-        [string]$Path = $DefaultServerFileDirectory
-    )
+    . $CackledaemonConfigLocation
 
-    New-Item $Path
+    New-Item -Type Directory $ServerFileDirectory
 }
 
 function Clear-ServerFileDirectory {
-    [CmdletBinding()]
-    param(
-        [string]$Path = $DefaultServerFileDirectory
-    )
+    . $CackledaemonConfigLocation
 
-    Get-ChildItem $Path | ForEach-Object {
-        Remove-Item $_
+    Get-ChildItem $ServerFileDirectory | ForEach-Object {
+        Remove-Item $_.FullName
+    }
+}
+
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'New-ServerFileDirectory' {
+    BeforeEach {
+        Initialize-TestEnvironment
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    It 'creates a new server file directory' {
+        New-ServerFileDirectory
+
+        'TestDrive:\UserProfile\.emacs.d\server' | Should -Exist
+    }
+}
+
+Describe 'Test-ServerFileDirectory' {
+    BeforeEach {
+        Initialize-TestEnvironment
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    Context 'when there is not a server file directory' {
+        It 'tests for a server file directory' {
+            Test-ServerFileDirectory | Should -Be $False
+        }
+    }
+
+    Context 'when there is a server file directory' {
+        BeforeEach {
+            New-ServerFileDirectory
+        }
+        It 'tests for a server file directory' {
+            Test-ServerFileDirectory | Should -Be $True
+        }
+    }
+}
+
+Describe 'Clear-ServerFileDirectory' {
+    BeforeEach {
+        Initialize-TestEnvironment
+        New-ServerFileDirectory
+        New-Item 'TestDrive:\UserProfile\.emacs.d\server\TestFile'
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    It 'should clear the server file directory' {
+        Clear-ServerFileDirectory
+        'TestDrive:\UserProfile\.emacs.d\server' | Should -Exist
+        'TestDrive:\UserProfile\.emacs.d\server\TestFile' | Should -Not -Exist
     }
 }
 
@@ -2640,6 +2689,11 @@ Export-ModuleMember `
 
       'Get-StartMenuItems',
       'Install-Shortcuts',
+
+      'New-ServerFileDirectory',
+      'Test-ServerFileDirectory',
+      'Get-ServerFileDirectory',
+      'Clear-ServerFileDirectory',
 
       'Set-Shortcut',
 
