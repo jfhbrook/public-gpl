@@ -1243,7 +1243,7 @@ class Workspace {
     }
 
     [boolean]TestArchive([Version]$Version) {
-        return Test-Item $this.GetArchivePath($Version)
+        return Test-Path $this.GetArchivePath($Version)
     }
 
     [System.IO.FileInfo]GetArchive([Version]$Version) {
@@ -1255,10 +1255,10 @@ class Workspace {
     }
 
     [boolean]TestInstall([Version]$Version) {
-        return Test-Item $this.GetInstallPath($Version)
+        return Test-Path $this.GetInstallPath($Version)
     }
 
-    [System.IO.FileInfo]GetInstall([Version]$Version) {
+    [System.IO.DirectoryInfo]GetInstall([Version]$Version) {
         return Get-Item $this.GetInstallPath($Version)
     }
 
@@ -1273,7 +1273,7 @@ class Workspace {
 function Test-Workspace {
     . $CackledaemonConfigLocation
 
-    Test-Item $WorkspaceDirectory
+    Test-Path $WorkspaceDirectory
 }
 
 function Get-Workspace {
@@ -1302,6 +1302,8 @@ function Remove-Workspace {
     $Workspace = Get-Workspace
 
     Remove-Item $Workspace.Root -Recurse
+
+    $Workspace.Clear()
 }
 
 #+END_SRC
@@ -1309,7 +1311,11 @@ function Remove-Workspace {
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
 Describe 'Workspace' {
     $TestVersion = New-Version 26 3
+    $TestKey = 'emacs-26.3-x86_64'
+    $TestArchive = "$TestDrive\Cackledaemon\Workspace\Archives\emacs-26.3-x86_64.zip"
+    $TestInstall = "$TestDrive\Cackledaemon\Workspace\Installs\emacs-26.3-x86_64"
     $TestWorkspace = $null
+
     BeforeEach {
         Initialize-TestEnvironment
         $TestWorkspace = New-Workspace
@@ -1327,8 +1333,60 @@ Describe 'Workspace' {
         'TestDrive:\Cackledaemon\Workspace\Backups' | Should -Exist
     }
 
+    It 'can get an existing workspace' {
+        Get-Workspace | Should -Not -Be Null
+    }
+
     It 'can generate a key from a version' {
         $TestWorkspace.GetKey($TestVersion) | Should -Be 'emacs-26.3-x86_64'
+    }
+
+    It 'can generate an archive path from a version' {
+        $TestWorkspace.GetArchivePath($TestVersion) | Should -Be $TestArchive
+    }
+
+    Context "when an archive doesn't exist" {
+        It 'can test an archive path from a version' {
+            $TestWorkspace.TestArchive($TestVersion) | Should -Be $False
+        }
+    }
+
+    Context 'when an archive exists' {
+        BeforeEach {
+            New-Item $TestArchive
+        }
+
+        It 'can test an archive path from a version' {
+            $TestWorkspace.TestArchive($TestVersion) | Should -Be $True
+        }
+
+        It 'can get an archive from a version' {
+            $TestWorkspace.GetArchive($TestVersion) | Should -Not -Be $null
+        }
+    }
+
+    It 'can generate an install path from a version' {
+        $TestWorkspace.GetInstallPath($TestVersion) | Should -Be $TestInstall
+    }
+
+    Context "when an install doesn't exist" {
+        It 'can test an install path from a version' {
+            $TestWorkspace.TestInstall($TestVersion) | Should -Be $False
+        }
+    }
+
+    Context 'when an install exists' {
+        BeforeEach {
+            New-Item -Type Directory $TestInstall
+        }
+
+        It 'can test an install path from a version' {
+            $TestWorkspace.TestInstall($TestVersion) | Should -Be $True
+        }
+
+        It 'can get an install from a version' {
+            $TestWorkspace.GetInstall($TestVersion) | Should -Not -Be $null
+        }
     }
 }
 #+END_SRC
@@ -1350,15 +1408,53 @@ function New-EmacsArchive {
 
     $Workspace = Get-Workspace
 
-    $Archive = Join-Path $Workspace.Archives.FullName (Split-Path $Download.Href -Leaf)
+    $Archive = $Workspace.GetArchivePath($Download.Version)
 
     Invoke-WebRequest `
       -Uri $Download.Href `
-      -OutFile $Archive
+      -OutFile $Archive | Out-Null
 
     return Get-Item $Archive
 }
 
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'New-EmacsArchive' {
+    $TestWorkspace = $null
+    $TestDownload = New-Download 26 3 'https:\\test_url'
+    $ArchivePath = "$TestDrive\Cackledaemon\Workspace\Archives\emacs-26.3-x86_64.zip"
+
+    BeforeEach {
+        Initialize-TestEnvironment
+        $TestWorkspace = New-Workspace
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    It 'can download an Emacs archive' {
+        Mock -Module Cackledaemon Invoke-WebRequest {
+            New-Item $OutFile
+        }
+
+        $Archive = New-EmacsArchive $TestDownload
+
+        $Archive | Should -Not -Be $null
+        $ArchivePath | Should -Exist
+        $Archive.FullName | Should -Be $ArchivePath
+
+        Assert-MockCalled -Module Cackledaemon `
+          Invoke-WebRequest `
+          -Times 1 `
+          -ParameterFilter { $Uri -eq 'https:\\test_url' }
+    }
+}
+
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Export-EmacsArchive {
     param(
         [Parameter(Position=0)]
@@ -1376,6 +1472,45 @@ function Export-EmacsArchive {
     return Get-Item $Destination
 }
 
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Export-EmacsArchive' {
+    $TestWorkspace = $null
+    $TestDownload = New-Download 26 3 'https:\\test_url'
+    $ArchivePath = "$TestDrive\Cackledaemon\Workspace\Archives\emacs-26.3-x86_64.zip"
+    $TestArchive = $null
+    $InstallPath = "$TestDrive\Cackledaemon\Workspace\Installs\emacs-26.3-x86_64"
+
+    BeforeEach {
+        Initialize-TestEnvironment
+        $TestWorkspace = New-Workspace
+        $TestArchive = New-Item $ArchivePath
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    It 'can extract an Emacs archive' {
+        Mock -Module Cackledaemon Expand-Archive {
+            New-Item -Type Directory 'TestDrive:\Cackledaemon\Workspace\Installs\emacs-26.3-x86_64' | Out-Null
+        }
+
+        $Install = Export-EmacsArchive $TestArchive
+
+        Assert-MockCalled -Module Cackledaemon `
+          Expand-Archive `
+          -Times 1 `
+          -ParameterFilter { $Path -eq $ArchivePath -and $DestinationPath -eq $InstallPath }
+
+        $Install.FullName | Should -Be $InstallPath
+    }
+}
+
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Update-EmacsInstall {
     param(
         [System.IO.DirectoryInfo]$Source,
