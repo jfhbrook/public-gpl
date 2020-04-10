@@ -97,13 +97,17 @@ function New-CackledaemonWD {
 function Initialize-TestEnvironment {
     $Global:OriginalAppData = $Env:AppData
     $Global:OriginalProgramFiles = $Env:ProgramFiles
+    $Global:OriginalUserProfile = $Env:UserProfile
     $Global:OriginalModulePath = (Get-Module 'Cackledaemon').Path
 
     $Env:AppData = "$TestDrive\AppData"
     $Env:ProgramFiles = "$TestDrive\Program Files"
 
+    $Env:UserProfile = "$TestDrive\UserProfile"
+
     New-Item -Type Directory $Env:AppData
     New-Item -Type Directory $Env:ProgramFiles
+    New-Item -Type Directory $Env:UserProfile
 
     Remove-Module Cackledaemon -ErrorAction 'SilentlyContinue'
     Import-Module .\Cackledaemon\Cackledaemon.psm1
@@ -117,9 +121,11 @@ function Initialize-TestEnvironment {
 function Restore-StandardEnvironment {
     $Env:AppData = $Global:OriginalAppData
     $Env:ProgramFiles = $Global:OriginalProgramFiles
+    $Env:UserProfile = $Global:OriginalUserProfile
 
     Remove-Item "$TestDrive\AppData"
     Remove-Item "$TestDrive\Program Files"
+    Remove-Item -Recurse "$TestDrive\UserProfile"
     Remove-Item -Recurse "$TestDrive\Cackledaemon"
 
     Remove-Module Cackledaemon
@@ -208,7 +214,7 @@ JSON array.
 #+BEGIN_SRC csv :tangle ./Cackledaemon/Shortcuts.csv
 #TYPE ShortcutCsvRecord
 "ShortcutName","EmacsBinaryName","ArgumentList","Description"
-Emacs Client,emacsclientw.exe,"[]",Open the Emacs Client
+Emacs Client,emacsclientw.exe,"[]",GNU EmacsClient: The client for the extensible self-documenting text editor
 #+END_SRC
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
@@ -278,7 +284,7 @@ Describe 'Get-ShortcutsConfig' {
         $Config[0].ShortcutName | Should -Be 'Emacs Client'
         $Config[0].EmacsBinaryName | Should -Be 'emacsclientw.exe'
         $Config[0].ArgumentList | Should -Be @()
-        $Config[0].Description | Should -Be 'Open the Emacs Client'
+        $Config[0].Description | Should -Be 'GNU EmacsClient: The client for the extensible self-documenting text editor'
     }
 }
 
@@ -291,8 +297,8 @@ documentation for the ~ftype~ batch command.]]
 #+BEGIN_SRC csv :tangle ./Cackledaemon/FileTypeAssociations.csv
 #Type FileTypeAssociationCsvRecord
 "FileType","Extension","Command"
-Gnu.Emacs.Org,.org,emacsclientw.exe -c %1
-Gnu.Emacs.ELisp,.el,emacsclientw.exe -c %1
+Gnu.Emacs.Org,.org,emacsclientw.exe -c -a notepad.exe %1
+Gnu.Emacs.ELisp,.el,emacsclientw.exe -c -a notepad.exe %1
 #+END_SRC
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
@@ -343,11 +349,11 @@ Describe 'Get-FileTypeAssociationsConfig' {
 
         $Config[0].FileType | Should -Be 'Gnu.Emacs.Org'
         $Config[0].Extension | Should -Be '.org'
-        $Config[0].Command | Should -Be 'emacsclientw.exe -c %1'
+        $Config[0].Command | Should -Be 'emacsclientw.exe -c -a notepad.exe %1'
 
         $Config[1].FileType | Should -Be 'Gnu.Emacs.ELisp'
         $Config[1].Extension | Should -Be '.el'
-        $Config[1].Command | Should -Be 'emacsclientw.exe -c %1'
+        $Config[1].Command | Should -Be 'emacsclientw.exe -c -a notepad.exe %1'
     }
 }
 #+END_SRC
@@ -1761,12 +1767,29 @@ but in practice most people want to set =$Env:HOME= to =$Env:UserProfile=.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Set-HomeEnvVariable {
-    Set-ItemProperty -Path 'HKCU:\Environment' -Name 'HOME' $Env:UserProfile
+    Set-ItemProperty -Path 'HKCU:\Environment' -Name 'HOME' -Value $Env:UserProfile
 }
 
 #+END_SRC
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Set-HomeEnvVariable' {
+    BeforeEach {
+        Initialize-TestEnvironment
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    It 'should set the HOME environment variable' {
+        Mock -Module Cackledaemon Set-ItemProperty {}
+
+        Set-HomeEnvVariable
+
+        Assert-MockCalled -Module Cackledaemon Set-ItemProperty -Times 1 -ParameterFilter { $Path -eq 'HKCU:\Environment' -and $Name -eq 'HOME' -and $Value -eq "$TestDrive\UserProfile" }
+    }
+}
 #+END_SRC
 ** App Paths Registry Keys
 Windows, in addition to the concept of a user ~Path~, also has the concept of
@@ -1778,13 +1801,12 @@ as an administrator.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Set-EmacsAppPathRegistryKeys {
-    param(
-        [string]$Path
-    )
+    . $CackledaemonConfigLocation
+
 
     @('emacs.exe', 'runemacs.exe', 'emacsclient.exe', 'emacsclientw.exe') | ForEach-Object {
         $RegistryPath = Join-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths' $_
-        $BinPath = Join-Path $Path $_
+        $BinPath = Join-Path $EmacsInstallLocation "bin\$_"
 
         if (Test-Path $BinPath) {
             Set-Item -Path $RegistryPath -Value $BinPath
@@ -1798,6 +1820,60 @@ function Set-EmacsAppPathRegistryKeys {
               -CategoryTargetType 'string'
         }
 
+    }
+}
+
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Set-EmacsAppPathRegistryKeys' {
+    BeforeEach {
+        Initialize-TestEnvironment
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    Context 'when Emacs is installed' {
+        BeforeEach {
+            New-Item -Type Directory "$TestDrive\Program Files\emacs"
+            New-Item -Type Directory "$TestDrive\Program Files\emacs\bin"
+            New-Item "$TestDrive\Program Files\emacs\bin\emacs.exe"
+            New-Item "$TestDrive\Program Files\emacs\bin\runemacs.exe"
+            New-Item "$TestDrive\Program Files\emacs\bin\emacsclient.exe"
+            New-Item "$TestDrive\Program Files\emacs\bin\emacsclientw.exe"
+        }
+
+        AfterEach {
+            Remove-Item -Recurse "$TestDrive\Program Files\emacs"
+        }
+
+        It 'sets the Emacs app path registry keys' {
+            Mock -Module Cackledaemon Set-Item {}
+            Mock -Module Cackledaemon Set-ItemProperty {}
+
+            Set-EmacsAppPathRegistryKeys
+
+            Assert-MockCalled -Module Cackledaemon Set-Item -Times 4
+            Assert-MockCalled -Module Cackledaemon Set-ItemProperty -Times 4
+        }
+    }
+
+    Context "when Emacs isn't installed" {
+        It "doesn't set any registry keys" {
+            Mock -Module Cackledaemon Set-Item {}
+            Mock -Module Cackledaemon Set-ItemProperty {}
+
+            Set-EmacsAppPathRegistryKeys 2> $null
+
+            Assert-MockCalled -Module Cackledaemon Set-Item -Times 0
+            Assert-MockCalled -Module Cackledaemon Set-ItemProperty -Times 0
+
+            (0..3) | ForEach-Object {
+                $Error[$_] | Should -Match "doesn't exist - refusing to write this to the registry."
+            }
+        }
     }
 }
 
