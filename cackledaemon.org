@@ -102,8 +102,8 @@ function Initialize-TestEnvironment {
     $Env:AppData = "$TestDrive\AppData"
     $Env:ProgramFiles = "$TestDrive\Program Files"
 
-    New-Item $Env:AppData
-    New-Item $Env:ProgramFiles
+    New-Item -Type Directory $Env:AppData
+    New-Item -Type Directory $Env:ProgramFiles
 
     Remove-Module Cackledaemon -ErrorAction 'SilentlyContinue'
     Import-Module .\Cackledaemon\Cackledaemon.psm1
@@ -1458,16 +1458,16 @@ Describe 'New-EmacsArchive' {
 function Export-EmacsArchive {
     param(
         [Parameter(Position=0)]
-        [System.IO.FileInfo]$Archive
+        [string]$Path
     )
 
     $Workspace = Get-Workspace
 
-    $Source = $Archive.FullName
+    $Key = [IO.Path]::GetFileNameWithoutExtension($Path)
 
-    $Destination = Join-Path $Workspace.Installs.FullName $Archive.BaseName
+    $Destination = Join-Path $Workspace.Installs.FullName $Key
 
-    Expand-Archive -Path $Source -DestinationPath $Destination
+    Expand-Archive -Path $Path -DestinationPath $Destination
 
     return Get-Item $Destination
 }
@@ -1513,29 +1513,73 @@ Describe 'Export-EmacsArchive' {
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Update-EmacsInstall {
     param(
-        [System.IO.DirectoryInfo]$Source,
         [string]$Path
     )
 
-    if (-not $Source) {
-        $Source = Get-Item -ErrorAction Stop $Path
-    }
+
+    $Source = Get-Item -ErrorAction Stop $Path
 
     . $CackledaemonConfigLocation
 
-    $Backup = Join-Path $Workspace.Backups.FullName ('emacs-{0}' -f (Get-Date -Format 'o'))
+    $Workspace = Get-Workspace
+
+    $Backup = Join-Path $Workspace.Backups ('emacs-{0}' -f (Get-Date -Format 'yyyyMMddHHmmss'))
 
     if (Test-Path $EmacsInstallLocation -ErrorAction Stop) {
         Copy-Item $EmacsInstallLocation $Backup -ErrorAction Stop
-        Remove-Item $EmacsInstallLocation -ErrorAction Stop
+        Remove-Item -Recurse $EmacsInstallLocation -ErrorAction Stop
     }
 
     Move-Item $Source $EmacsInstallLocation -ErrorAction Stop
-    Remove-Item $Backup
+    Remove-Item -Recurse $Backup -ErrorAction SilentlyContinue
 
     return Get-Item $EmacsInstallLocation
 }
 
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Update-EmacsInstall' {
+    $TestWorkspace = $null
+    $InstallPath = "$TestDrive\Cackledaemon\Workspace\Installs\emacs-26.3-x86_64"
+    $TestInstall = $null
+
+    BeforeEach {
+        Initialize-TestEnvironment
+        New-Workspace
+        $TestInstall = New-Item -Type Directory 'TestDrive:\Cackledaemon\Workspace\Installs\emacs-26.3-x86_64'
+        New-Item 'TestDrive:\Cackledaemon\Workspace\Installs\emacs-26.3-x86_64\NewInstall'
+    }
+
+    AfterEach {
+        Remove-Item -Recurse 'TestDrive:\Program Files\emacs' -ErrorAction Continue
+        Restore-StandardEnvironment
+    }
+
+    Context "when there isn't an existing Emacs install" {
+        It 'can install Emacs' {
+            'TestDrive:\Program Files\emacs' | Should -Not -Exist
+
+            Update-EmacsInstall $InstallPath
+
+            'TestDrive:\Program Files\emacs' | Should -Exist
+            'TestDrive:\Program Files\emacs\NewInstall' | Should -Exist
+        }
+    }
+
+    Context 'when there is an existing Emacs install' {
+        It 'can update Emacs' {
+            New-Item -Type Directory 'TestDrive:\Program Files\emacs'
+            New-Item 'TestDrive:\Program Files\emacs\OldInstall'
+
+            Update-EmacsInstall $InstallPath
+
+            'TestDrive:\Program Files\emacs\NewInstall' | Should -Exist
+            'TestDrive:\Program Files\emacs\OldInstall' | Should -Not -Exist
+            'TestDrive:\Cackledaemon\Workspace\Backups\*' | Should -Not -Exist
+        }
+    }
+}
 #+END_SRC
 ** Environment Variables
 *** PATH Environment Variable
@@ -2262,6 +2306,8 @@ Export-ModuleMember `
 
       'New-Version',
       'New-Download',
+
+      'Update-EmacsInstall',
 
       'Write-Log',
       'Write-LogDebug',
