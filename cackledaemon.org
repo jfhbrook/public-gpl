@@ -2444,8 +2444,6 @@ function Start-EmacsDaemon {
           -RedirectStandardError $EmacsStdErrLogFile `
           -PassThru
 
-        Write-Host $Process
-
         Write-ProcessToPidFile $Process
 
         if ($Wait) {
@@ -2575,8 +2573,8 @@ Describe 'Start-EmacsDaemon' {
 
 #+END_SRC
 ** Get the Emacs Daemon
-We actually already have this, its name just isn't very ergonomic. We'll set it
-as an alias here for convenience.
+We actually already have this, its name just isn't very ergonomic. This wrapper
+just adds cmdlet bindings so that -ErrorAction works.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Get-EmacsDaemon {
@@ -2596,7 +2594,7 @@ function Stop-EmacsDaemon {
     [CmdletBinding()]
     param()
 
-    $Process = Get-EmacsProcessFromPidFile
+    $Process = Get-ProcessFromPidFile
 
     if (-not $Process) {
         Write-LogError `
@@ -2609,9 +2607,52 @@ function Stop-EmacsDaemon {
 
         Stop-Process -InputObject $Process
 
-        Write-EmacsProcessToPidFile $null
+        Write-ProcessToPidFile $null
 
         Write-LogVerbose 'Done.'
+    }
+}
+
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Stop-EmacsDaemon' {
+    BeforeEach {
+        Initialize-TestEnvironment
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    Context 'when Emacs is running' {
+        It 'stops Emacs' {
+            Mock -Module Cackledaemon Get-ProcessFromPidFile { (Get-Process)[0] }
+            Mock -Module Cackledaemon Stop-Process {}
+            Mock -Module Cackledaemon Write-ProcessToPidFile {}
+
+            Stop-EmacsDaemon
+
+            Assert-MockCalled -Module Cackledaemon Get-ProcessFromPidFile -Times 1
+            Assert-MockCalled -Module Cackledaemon Stop-Process -Times 1
+            Assert-MockCalled -Module Cackledaemon Write-ProcessToPidFile -Times 1 -ParameterFilter { $Process -eq $null }
+        }
+    }
+
+    Context 'when Emacs is not running' {
+        It 'exits with an error' {
+            Mock -Module Cackledaemon Get-ProcessFromPidFile { $null }
+            Mock -Module Cackledaemon Stop-Process {}
+            Mock -Module Cackledaemon Write-ProcessToPidFile {}
+
+            Stop-EmacsDaemon 2> $null
+
+            Assert-MockCalled -Module Cackledaemon Get-ProcessFromPidFile -Times 1
+            Assert-MockCalled -Module Cackledaemon Stop-Process -Times 0
+            Assert-MockCalled -Module Cackledaemon Write-ProcessToPidFile -Times 0
+
+            $Error[0].ToString() | Should -Be "A managed Emacs daemon isn't running and can not be stopped!"
+        }
     }
 }
 
@@ -2625,7 +2666,7 @@ function Restart-EmacsDaemon {
     try {
         Stop-EmacsDaemon -ErrorAction Stop
     } catch {
-        Write-LogWarning $_.Exception.Message
+        Write-LogWarning 'Attempting to start the Emacs daemon even though stopping it failed'
     }
 
     Start-EmacsDaemon
