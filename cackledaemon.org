@@ -1887,7 +1887,9 @@ Emacs's ~addpm.exe~ creates a shortcut to ~emacs.exe~ in a sub-folder called
 function Get-StartMenuItems {
     . $CackledaemonConfigLocation
 
-    Get-ChildItem -Path $StartMenuPath -ErrorAction SilentlyContinue
+    Get-ChildItem -Path $StartMenuPath -ErrorAction SilentlyContinue | ForEach-Object {
+        Get-Item $_.FullName
+    }
 }
 
 #+END_SRC
@@ -1906,7 +1908,7 @@ Describe 'Get-StartMenuItems' {
         $TestShortcut = $null
         BeforeEach {
             New-Item -Type Directory 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
-            $TestShortcut = New-Item 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\test.lnk'
+            $TestShortcut = New-Item 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\Test.lnk'
         }
 
         AfterEach {
@@ -1948,18 +1950,26 @@ function Set-Shortcut {
     param(
         [string]$ShortcutPath,
         [string]$TargetPath,
-        [string[]]$Argumentlist = @(),
+        [string[]]$ArgumentList = @(),
         [string]$WorkingDirectory = $Env:UserProfile,
         [string]$Description
     )
 
     $Shell = Get-WShell
 
+    $Arguments = ($ArgumentList | ForEach-Object {
+        if ($_ -match '[" ]') {
+            return ('"{0}"' -f ($_ -replace '"', '\"'))
+        } else {
+            return ($_ -replace '([,;=\W])', '^$1')
+        }
+    }) -join ' '
+
     $Shortcut = $Shell.CreateShortcut($ShortcutPath)
     $Shortcut.TargetPath = $TargetPath
-    $Shortcut.Arguments = $ArgumentList
+    $Shortcut.Arguments = $Arguments
     $Shortcut.WorkingDirectory = $WorkingDirectory
-   
+
     if ($Description) {
         $Shortcut.Description = $Description
     }
@@ -1995,7 +2005,7 @@ Describe 'Set-Shortcut' {
                         Save() {
                             $this.ShortcutPath | Should -Be 'shortcut path'
                             $this.TargetPath | Should -Be 'target path'
-                            $this.Arguments | Should -Be @()
+                            $this.Arguments | Should -Be '"foo bar" "\"baz\"" ^;quux^,'
                             $this.Description | Should -Be 'description'
                         }
                     }
@@ -2009,7 +2019,7 @@ Describe 'Set-Shortcut' {
             return New-Object FakeShell
         }
 
-        Set-Shortcut -ShortcutPath 'shortcut path' -TargetPath 'target path' -Description 'description'
+        Set-Shortcut -ShortcutPath 'shortcut path' -TargetPath 'target path' -Description 'description' -ArgumentList @('foo bar', '"baz"', ';quux,')
 
         Assert-MockCalled -Module Cackledaemon Get-WShell -Times 1
     }
@@ -2023,27 +2033,50 @@ want and setting the rest.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Install-Shortcuts {
+    . $CackledaemonConfigLocation
+
     $Config = Get-ShortcutsConfig
     $CurrentItems = Get-StartMenuItems
-    $DesiredShortcutNames = $Config | ForEach-Object { $_.ShortcutName }
+    $DesiredShortcutPaths = $Config | ForEach-Object {
+        Join-Path $StartMenuPath ($_.ShortcutName + ".lnk")
+    }
 
-    $CurrentItems | ForEach-Object {
-        Split-Path $_ -Leaf
-    } | Where-Object {
-        -not $DesiredFilenames.Contains($_)
+    $CurrentItems | Where-Object {
+        -not $DesiredShortcutPaths.Contains($_.FullName)
     } | ForEach-Object {
         Remove-Item $_
     }
 
     $Config | ForEach-Object {
         Set-Shortcut `
-          -ShortcutPath (Join-Path $StartMenuPath $_.ShortcutName) `
+          -ShortcutPath (Join-Path $StartMenuPath ($_.ShortcutName + ".lnk")) `
           -TargetPath (Join-Path $EmacsInstallLocation $_.EmacsBinaryName) `
           -ArgumentList $_.ArgumentList `
           -Description $_.Description
     }
 }
 
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Install-Shortcuts' {
+    BeforeEach {
+        Initialize-TestEnvironment
+        New-Item -Type Directory 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
+        New-Item 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\RemoveMe.lnk'
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    It 'installs shortcuts' {
+        Install-Shortcuts
+
+        'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\RemoveMe.lnk' | Should -Not -Exist
+        'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\Emacs Client.lnk' | Should -Exist
+    }
+}
 #+END_SRC
 ** File Type Associations
 File type associations in Windows are [[https://twitter.com/jfhbrook/status/1245917952316039169]["complicated"]] and the documentation for
@@ -2368,11 +2401,6 @@ Note that there are a few things that may seem a little odd but are necessary:
   form doesn't exist when we try to generate the context menu, very strange
   things happen.
 
-The vast majority of menu items launch a separate PowerShell instance which then
-imports Cackledaemon and attempts to run the appropriate function. As such, the
-module needs to be properly installed in PowerShell's module search paths in
-order for this applet to function properly.
-
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 Add-Type -AssemblyName System.Windows.Forms
 
@@ -2611,6 +2639,7 @@ Export-ModuleMember `
       'New-Download',
 
       'Get-StartMenuItems',
+      'Install-Shortcuts',
 
       'Set-Shortcut',
 
@@ -2815,7 +2844,7 @@ This project can be published on the Powershell Gallery by running
 Powershell Gallery NuGet API key. This file gets sourced by the ~Publish~ task.
 
 #+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
-task Publish Build, {
+task Publish Build, Test, {
     . .\Secrets.ps1
      Publish-Module -Path .\Cackledaemon\ -NuGetApiKey $PowershellGalleryAPIKey
 }
