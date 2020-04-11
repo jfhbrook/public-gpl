@@ -110,7 +110,7 @@ function Initialize-TestEnvironment {
     New-Item -Type Directory $Env:UserProfile
 
     Remove-Module Cackledaemon -ErrorAction 'SilentlyContinue'
-    Import-Module .\Cackledaemon\Cackledaemon.psm1
+    Import-Module .\Cackledaemon\Cackledaemon.psd1
 
     $Global:CackledaemonWD = "$TestDrive\Cackledaemon"
     $Global:CackledaemonConfigLocation = "$TestDrive\Cackledaemon\Configuration.ps1"
@@ -2966,79 +2966,58 @@ function Invoke-Applet {
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 Export-ModuleMember `
   -Function @(
-      'New-CackledaemonWD',
-      'Get-FileTypeAssociationsConfig',
-
-      'Get-WShell',
-
-      'New-Version',
-      'New-Download',
-
-      'Get-StartMenuItems',
-      'Install-Shortcuts',
-
-      'New-ServerFileDirectory',
-      'Test-ServerFileDirectory',
       'Clear-ServerFileDirectory',
-
-      'Set-Shortcut',
-
-      'Write-ProcessToPidFile',
-
-      'Get-ProcessFromPidFile',
-
-      'Update-EmacsInstall',
-
-      'Write-Log',
-      'Write-LogDebug',
-      'Write-LogVerbose',
-      'Write-LogInformation',
-      'Write-LogHost',
-      'Write-LogWarning',
-      'Write-LogError',
-
-      'Enable-Job',
       'Disable-Job',
-
+      'Disable-LogRotateJob',
+      'Enable-Job',
+      'Enable-LogRotateJob',
+      'Export-EmacsArchive'
+      'Get-EmacsDaemon',
+      'Get-EmacsDownload',
+      'Get-EmacsExeVersion',
+      'Get-FileTypeAssociationsConfig',
+      'Get-LatestEmacsDownload',
+      'Get-ProcessFromPidFile',
+      'Get-ShortcutsConfig',
+      'Get-StartMenuItems',
+      'Get-StartMenuPath',
+      'Get-UnmanagedEmacsDaemon',
+      'Get-WShell',
       'Get-Workspace',
+      'Install-Emacs',
+      'Install-Shortcuts',
+      'Invoke-Applet',
+      'Invoke-LogRotate',
+      'New-CackledaemonWD',
+      'New-Download',
+      'New-EmacsArchive',
+      'New-ServerFileDirectory',
+      'New-Shortcut',
+      'New-Version',
       'New-Workspace',
       'Remove-Workspace',
-
-      'Get-EmacsExeVersion',
-      'Get-EmacsDownload',
-      'Get-LatestEmacsDownload',
-
-      'New-EmacsArchive',
-      'Export-EmacsArchive'
-
+      'Restart-EmacsDaemon',
       'Set-EmacsAppPathRegistryKeys',
       'Set-EmacsPathEnvVariable',
       'Set-HomeEnvVariable',
-
-      'Get-StartMenuPath',
-      'New-Shortcut',
-      'Get-ShortcutsConfig',
-
-      # filetype stuff
-
-      'Invoke-LogRotate',
-      'Enable-LogRotateJob',
-      'Disable-LogRotateJob',
-
+      'Set-Shortcut',
       'Start-EmacsDaemon',
-      'Get-EmacsDaemon',
       'Stop-EmacsDaemon',
-      'Restart-EmacsDaemon',
-      'Get-UnmanagedEmacsDaemon',
-
-      'Invoke-Applet',
       'Test-EmacsExe',
-
-      'Install-Emacs'
+      'Test-ServerFileDirectory',
+      'Update-EmacsInstall',
+      'Write-Log',
+      'Write-LogDebug',
+      'Write-LogError',
+      'Write-LogHost',
+      'Write-LogInformation',
+      'Write-LogVerbose',
+      'Write-LogWarning',
+      'Write-ProcessToPidFile'
   )`
   -Variable @(
-      'CackledaemonWD',
-      'CackledaemonConfigLocation'
+      'CackledaemonConfigLocation',
+      'CackledaemonWD'
   )
 
 #+END_SRC
@@ -3079,22 +3058,60 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
     # NestedModules = @()
 
     FunctionsToExport = @(
-        'New-CackledaemonWD',
-        'Invoke-LogRotate',
-        'Enable-LogRotateJob',
+        'Clear-ServerFileDirectory',
+        'Disable-Job',
         'Disable-LogRotateJob',
-        'Start-EmacsDaemon',
+        'Enable-Job',
+        'Enable-LogRotateJob',
+        'Export-EmacsArchive'
         'Get-EmacsDaemon',
-        'Stop-EmacsDaemon',
-        'Restart-EmacsDaemon',
+        'Get-EmacsDownload',
+        'Get-EmacsExeVersion',
+        'Get-FileTypeAssociationsConfig',
+        'Get-LatestEmacsDownload',
+        'Get-ProcessFromPidFile',
+        'Get-ShortcutsConfig',
+        'Get-StartMenuItems',
+        'Get-StartMenuPath',
         'Get-UnmanagedEmacsDaemon',
-        'Invoke-Applet'
+        'Get-WShell',
+        'Get-Workspace',
+        'Install-Emacs',
+        'Install-Shortcuts',
+        'Invoke-Applet',
+        'Invoke-LogRotate',
+        'New-CackledaemonWD',
+        'New-Download',
+        'New-EmacsArchive',
+        'New-ServerFileDirectory',
+        'New-Shortcut',
+        'New-Version',
+        'New-Workspace',
+        'Remove-Workspace',
+        'Restart-EmacsDaemon',
+        'Set-EmacsAppPathRegistryKeys',
+        'Set-EmacsPathEnvVariable',
+        'Set-HomeEnvVariable',
+        'Set-Shortcut',
+        'Start-EmacsDaemon',
+        'Stop-EmacsDaemon',
+        'Test-EmacsExe',
+        'Test-ServerFileDirectory',
+        'Update-EmacsInstall',
+        'Write-Log',
+        'Write-LogDebug',
+        'Write-LogError',
+        'Write-LogHost',
+        'Write-LogInformation',
+        'Write-LogVerbose',
+        'Write-LogWarning',
+        'Write-ProcessToPidFile'
     )
 
     CmdletsToExport = @()
     VariablesToExport = @(
-        'CackledaemonWD',
-        'CackledaemonConfigLocation'
+        'CackledaemonConfigLocation',
+        'CackledaemonWD'
     )
 
     FileList = @(
