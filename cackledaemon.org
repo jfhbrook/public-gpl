@@ -221,7 +221,7 @@ JSON array.
 #+BEGIN_SRC csv :tangle ./Cackledaemon/Shortcuts.csv
 #TYPE ShortcutCsvRecord
 "ShortcutName","EmacsBinaryName","ArgumentList","Description"
-Emacs Client,emacsclientw.exe,"[]",GNU EmacsClient: The client for the extensible self-documenting text editor
+EmacsClient,emacsclientw.exe,"[]",GNU EmacsClient: The client for the extensible self-documenting text editor
 #+END_SRC
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
@@ -288,7 +288,7 @@ Describe 'Get-ShortcutsConfig' {
 
         $Config.length | Should -Be 1
 
-        $Config[0].ShortcutName | Should -Be 'Emacs Client'
+        $Config[0].ShortcutName | Should -Be 'EmacsClient'
         $Config[0].EmacsBinaryName | Should -Be 'emacsclientw.exe'
         $Config[0].ArgumentList | Should -Be @()
         $Config[0].Description | Should -Be 'GNU EmacsClient: The client for the extensible self-documenting text editor'
@@ -545,7 +545,7 @@ function Write-Log {
         Write-Warning 'Unable to load configuration! Unable to write to log file.'
     }
 
-    if (-not @('Debug', 'Verbose', 'Information', 'Warning', 'Error').Contains($Level)) {
+    if (-not @('Debug', 'Verbose', 'Information', 'Host', 'Warning', 'Error').Contains($Level)) {
         Write-LogWarning ('Write-Log called with unrecognized level {0}' -f $Level)
         $Level = 'Warning'
     }
@@ -562,11 +562,12 @@ function Write-Log {
 
     if ($Level -eq 'Debug') {
         Write-Debug $Message
-    }
-    if ($Level -eq 'Information') {
-        Write-Information $Message
     } elseif ($Level -eq 'Verbose') {
         Write-Verbose $Message
+    } elseif ($Level -eq 'Information') {
+        Write-Information $Message
+    } elseif ($Level -eq 'Host') {
+        Write-Host $Message
     } elseif ($Level -eq 'Warning') {
         Write-Warning $Message
     } elseif ($Level -eq 'Error') {
@@ -601,6 +602,13 @@ function Write-LogInformation {
     param([string]$Message)
 
     Write-Log $Message -Level Information
+}
+
+function Write-LogHost {
+    [Parameter(Position=0)]
+    param([string]$Message)
+
+    Write-Log $Message -Level Host
 }
 
 function Write-LogVerbose {
@@ -693,7 +701,7 @@ Describe 'Write-Log' {
     }
 }
 
-@('Debug', 'Verbose', 'Information', 'Warning') | ForEach-Object {
+@('Debug', 'Verbose', 'Information', 'Host', 'Warning') | ForEach-Object {
     Describe ('Write-Log{0}' -f $_) {
         BeforeEach {
             Initialize-TestEnvironment
@@ -794,7 +802,7 @@ function Invoke-LogRotate {
                 $Next = '{0}.{1}' -f $LogFile, ($_ + 1)
 
                 if (Test-Path $Current) {
-                    Write-Log ('Copying {0} to {1}...' -f $Current, $Next)
+                    Write-LogVerbose ('Copying {0} to {1}...' -f $Current, $Next)
 
                     Copy-Item -Path $Current -Destination $Next
                 }
@@ -1042,47 +1050,14 @@ function Get-EmacsExeVersion {
         . $CackledaemonConfigLocation
 
         $EmacsExe = Join-Path $EmacsInstallLocation 'bin\emacs.exe'
-        if ((Invoke-Expression "$EmacsExe --version")[0] -match '^GNU Emacs (\d+)\.(\d+)$') {
-            New-Version $Matches[1], $Matches[2]
+        if ((& $EmacsExe --version)[0] -match '^GNU Emacs (\d+)\.(\d+)$') {
+            New-Version $Matches[1] $Matches[2]
         }
     }
 }
 
 #+END_SRC
 
-#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
-Describe 'Get-EmacsExeVersion' {
-    BeforeEach {
-        Initialize-TestEnvironment
-    }
-
-    AfterEach {
-        Restore-StandardEnvironment
-    }
-
-    Context 'when emacs is installed' {
-        It 'returns a version' {
-            Mock -ModuleName Cackledaemon Test-EmacsExe { $True }
-            Mock -ModuleName Cackledaemon Invoke-Expression {
-                return 'GNU Emacs 26.2
-Copyright (C) 2019 Free Software Foundation, Inc.
-GNU Emacs comes with ABSOLUTELY NO WARRANTY.
-You may redistribute copies of GNU Emacs
-under the terms of the GNU General Public License.
-For more information about these matters, see the file named COPYING.'
-            }
-
-            $Version = Get-EmacsExeVersion
-
-            Assert-MockCalled -ModuleName Cackledaemon Test-EmacsExe -Times 1
-            Assert-MockCalled -ModuleName Cackledaemon Invoke-Expression `
-              -Times 1 `
-              -ParameterFilter { $Command -eq "$TestDrive\Program Files\emacs\bin\emacs.exe --version" }
-        }
-    }
-}
-
-#+END_SRC
 ** Official Downloads
 Emacs hosts downloads on an Apache webserver running [[https://trisquel.info/][Trisquel Linux]], which I
 personally find charming. It turns out that Apache directory listings can be
@@ -1129,7 +1104,6 @@ function New-Download {
 function Get-EmacsDownload {
     . $CackledaemonConfigLocation
 
-    Write-LogVerbose ('Checking {0} for available Emacs versions...' -f $EmacsDownloadsEndpoint)
     return (Invoke-WebRequest $EmacsDownloadsEndpoint).Links | ForEach-Object {
         if ($_.href -match '^emacs-(\d+)/$') {
             $MajorPathPart = $_.href
@@ -1628,8 +1602,7 @@ function Set-EmacsPathEnvVariable {
     if ($ExistingEmacsPathPart) {
         Write-Verbose 'Emacs is already in the PATH - no changes necessary.'
     } else {
-        $PathParts += $Path
-        $PathProperty.Path = ($PathParts -Join ';') + ';'
+        $PathProperty.Path += ($Path + ';')
 
         Set-ItemProperty -Path 'HKCU:\Environment' -Name 'Path' -Value $PathProperty
     }
@@ -2091,7 +2064,7 @@ Describe 'Install-Shortcuts' {
         Install-Shortcuts
 
         'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\RemoveMe.lnk' | Should -Not -Exist
-        'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\Emacs Client.lnk' | Should -Exist
+        'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\EmacsClient.lnk' | Should -Exist
     }
 }
 
@@ -2138,44 +2111,123 @@ function Install-FileTypeAssociations {
 ** Putting It All Together
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Install-Emacs {
-    if (Test-EmacsExe) {
-        Write-Host "Emacs is already installed. To update Emacs, run Update-Emacs."
-        return
-    }
+    $ErrorActionPreference = 'Stop'
+
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Loading Cackledaemon configuration...' -PercentComplete 0
+    Write-LogVerbose 'Loading Cackledaemon configuration...'
 
     . $CackledaemonConfigLocation
 
     if (Test-Workspace) {
         $Workspace = Get-Workspace
     } else {
+        Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Creating workspace...' -PercentComplete 10
+        Write-LogVerbose 'Creating new workspace...'
+
         $Workspace = New-Workspace
     }
 
-    $TargetVersion = Get-LatestEmacsDownload
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking the Emacs website for the latest available download...' -PercentComplete 20
+    Write-LogHost 'Checking the Emacs website for the latest available download...'
+
+    $LatestDownload = Get-LatestEmacsDownload
+
+    Write-LogVerbose ('Version {0} is the latest version of Emacs available for install' -f $LatestDownload.Version)
+
+    $ShouldInstall = $False
+
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking if Emacs needs to be installed or updated...' -PercentComplete 30
+    Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -CurrentOperation "Looking for an Emacs install in $EmacsInstallLocation..." -PercentComplete 0
+    if (Test-EmacsExe) {
+        Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -CurrentOperation 'Running "Emacs --version"...' -PercentComplete 33
+
+        $InstalledVersion = Get-EmacsExeVersion
+
+        Write-LogVerbose ('Version {0} of Emacs is installed' -f $InstalledVersion)
+
+        Write-Progress -Activity 'Checking the currently installed Emacs version' -CurrentOperation 'Comparing versions...' -PercentComplete 67
+        if ($LatestDownload.Version -gt $InstalledVersion) {
+            Write-LogVerbose ('Upstream Emacs version {0} is newer than installed Emacs version {1}' -f $LatestDownload.Version, $InstalledVersion)
+            $ShouldInstall = $True
+        } else {
+            Write-LogVerbose ('Upstream Emacs version {0} is no newer than installed Emacs version {1}' -f $LatestDownload.Version, $InstalledVersion)
+        }
+    } else {
+        Write-LogVerbose 'No version of Emacs is installed'
+        $ShouldInstall = $True
+    }
+
+    if (-not $ShouldInstall) {
+        Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -Completed
+        Write-Progress -Id 1 -Activity 'Installing Emacs' -Completed
+        Write-LogHost 'Emacs is currently installed and at the latest available version.'
+        return
+    }
+
+    $TargetVersion = $LatestDownload.Version
 
     if ($Workspace.TestInstall($TargetVersion)) {
+        Write-LogVerbose "Emacs has already been downloaded and unpacked for version $TargetVersion"
         $Install = $Workspace.GetInstall($TargetVersion)
     } else {
         if ($Workspace.TestArchive($TargetVersion)) {
+            Write-LogVerbose "Eamcs has already been downloaded (but not unpacked) for version $TargetVersion"
             $Archive = $Workspace.GetArchive($TargetVersion);
         } else {
-            $Archive = New-EmacsArchive $TargetVersion
+            Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Downloading Emacs version $TargetVersion..." -PercentComplete 40
+            Write-LogHost "Downloading Emacs version $TargetVersion..."
+
+            $Archive = New-EmacsArchive $LatestDownload
         }
+        Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Unpacking Emacs version $TargetVersion..." -PercentComplete 50
+        Write-LogHost "Unpacking Emacs version $TargetVersion..."
 
         $Install = Export-EmacsArchive $Archive
     }
 
+
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Executing Administrator commands...' -PercentComplete 60
+    Write-LogHost "Executing Administrator commands..."
+
     Start-Process -Wait powershell.exe -Verb RunAs -ArgumentList '-Command' "{
         Import-Module Cackledaemon
+
+        Write-Progress -Activity 'Installing Emacs' -CurrentOperation 'Moving files to $EmacsInstallLocation...' -PercentComplete 0
+
+        Write-LogHost 'Moving files to $EmacsInstallLocation...'
         Update-EmacsInstall -Path $Install
+
+        Write-Progress -Activity 'Installing Emacs' -CurrentOperation 'Setting App Path registry keys...' -PercentComplete 1
+
+        Write-LogHost 'Setting App Path registry keys...'
         Set-EmacsAppPathRegistryKeys
+
+        Write-Progress -Activity 'Installing Emacs' -CurrentOperation 'Setting file type associations...' -PercentComplete 2
+
+        Write-LogHost 'Setting file type associations...'
         Install-FileTypeAssociations
+
+        Write-Progress -Activity 'Installing Emacs' -Completed
     }"
 
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Updating the user's `$Path variable..." -PercentComplete 70
+    Write-LogHost "Updating the user's `$Path variable..."
+
     Set-EmacsPathEnvVariable
+
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Setting the user's `$HOME variable..." -PercentComplete 80
+
+    Write-LogHost "Setting the user's `$HOME variable..."
     Set-HomeEnvVariable
 
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Installing shortcuts..." -PercentComplete 90
+
+    Write-LogHost "Installing shortcuts..."
     Install-Shortcuts
+
+    Write-Progress -Activity 'Installing Emacs' -Completed
+
+    Write-LogHost "Emacs $TargetVersion is installed and ready to rock!"
 }
 
 #+END_SRC
@@ -2939,8 +2991,9 @@ Export-ModuleMember `
 
       'Write-Log',
       'Write-LogDebug',
-      'Write-LogInformation',
       'Write-LogVerbose',
+      'Write-LogInformation',
+      'Write-LogHost',
       'Write-LogWarning',
       'Write-LogError',
 
@@ -2979,7 +3032,9 @@ Export-ModuleMember `
       'Get-UnmanagedEmacsDaemon',
 
       'Invoke-Applet',
-      'Test-EmacsExe'
+      'Test-EmacsExe',
+
+      'Install-Emacs'
   )`
   -Variable @(
       'CackledaemonWD',
