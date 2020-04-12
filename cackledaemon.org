@@ -86,13 +86,11 @@ if ($InstalledModule) {
     Write-Host " :)"
     Write-Host "This script can " -NoNewLine
     Write-Host "optionally" -ForegroundColor Green -NoNewLine
-    Write-Host " update the Cackledaemon module for " -NoNewLine
-    Write-Host "all users" -ForegroundColor Red -NoNewLine
-    Write-Host ". It requires, and will prompt for, " -NoNewLine
-    Write-Host "Administrator privileges" -ForegroundColor Cyan -NoNewLine
+    Write-Host " update the Cackledaemon module for the " -NoNewLine
+    Write-Host "current user" -ForegroundColor Cyan -NoNewLine
     Write-Host '.'
 
-    $InstallCackledaemonChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Reinstall the Cackledaemon module for all users. This will install module updates."
+    $InstallCackledaemonChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Reinstall the Cackledaemon module the current user. This will install module updates."
     $DontInstallCackledaemonChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Don't reinstall the Cackledaemon module. It's already installed, but there may be updates."
 
     $InstallCackledaemon = -not [boolean]$host.UI.PromptForChoice( `
@@ -104,13 +102,11 @@ if ($InstalledModule) {
 } else {
     Write-Host "Cackledaemon " -NoNewLine
     Write-Host "needs to be installed!" -ForegroundColor Yellow
-    Write-Host "This script will install the Cackledaemon module for " -NoNewLine
-    Write-Host "all users" -ForegroundColor Red -NoNewLine
-    Write-Host ". It requires, and will prompt for, " -NoNewLine
-    Write-Host "Administrator privileges" -ForegroundColor Cyan -NoNewLine
+    Write-Host "This script will install the Cackledaemon module for the " -NoNewLine
+    Write-Host "current user" -ForegroundColor Cyan -NoNewLine
     Write-Host "."
 
-    $InstallCackledaemonChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Install the Cackledaemon module for all users. This is required in order to use Cackledaemon."
+    $InstallCackledaemonChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Install the Cackledaemon module for the current user. This is required in order to use Cackledaemon."
     $DontInstallCackledaemonChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Don't install the Cackledaemon module. This will abort the installation process."
 
     $InstallCackledaemon = -not [boolean]$host.UI.PromptForChoice( `
@@ -306,7 +302,7 @@ if (-not (Test-EmacsExe)) {
 
 Write-Host ''
 Write-Host "Cackledaemon can also set up the " -NoNewLine
-Write-Host "user's " -ForegroundColor Cyan -NoNewLine
+Write-Host "current user's " -ForegroundColor Cyan -NoNewLine
 Write-Host " environment by configuring the user's `$Path and `$HOME and by creating shortcuts. This touches the user's " -NoNewLine
 Write-Host "registry" -ForegroundColor Yellow -NoNewLine
 Write-Host " but doesn't require Administrator privileges."
@@ -2467,6 +2463,10 @@ function Install-EmacsUserEnvironment {
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Install-Emacs {
+    param(
+        [switch]$Force
+    )
+
     $ErrorActionPreference = 'Stop'
 
     Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Loading Cackledaemon configuration...' -PercentComplete 0
@@ -2493,30 +2493,37 @@ function Install-Emacs {
     $ShouldInstall = $False
 
     Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking if Emacs needs to be installed or updated...' -PercentComplete 43
-    Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -CurrentOperation "Looking for an Emacs install in $EmacsInstallLocation..." -PercentComplete 0
-    if (Test-EmacsExe) {
-        Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -CurrentOperation 'Running "Emacs --version"...' -PercentComplete 33
 
-        $InstalledVersion = Get-EmacsExeVersion
+    if ($Force) {
+        Write-LogVerbose "`$Force flag was enabled so installing Emacs regardless of what's installed"
 
-        Write-LogVerbose ('Version {0} of Emacs is installed' -f $InstalledVersion)
-
-        Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -CurrentOperation 'Comparing versions...' -PercentComplete 57
-        if ($LatestDownload.Version -gt $InstalledVersion) {
-            Write-LogVerbose ('Upstream Emacs version {0} is newer than installed Emacs version {1}' -f $LatestDownload.Version, $InstalledVersion)
-            $ShouldInstall = $True
-        } else {
-            Write-LogVerbose ('Upstream Emacs version {0} is no newer than installed Emacs version {1}' -f $LatestDownload.Version, $InstalledVersion)
-        }
-    } else {
-        Write-LogVerbose 'No version of Emacs is installed'
         $ShouldInstall = $True
+    } else {
+        Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -CurrentOperation "Looking for an Emacs install in $EmacsInstallLocation..." -PercentComplete 0
+
+        if (Test-EmacsExe) {
+            Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -CurrentOperation 'Running "Emacs --version"...' -PercentComplete 33
+
+            $InstalledVersion = Get-EmacsExeVersion
+
+            Write-LogVerbose ('Version {0} of Emacs is installed' -f $InstalledVersion)
+
+            Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -CurrentOperation 'Comparing versions...' -PercentComplete 57
+
+            if ($LatestDownload.Version -gt $InstalledVersion) {
+                Write-LogVerbose ('Upstream Emacs version {0} is newer than installed Emacs version {1}' -f $LatestDownload.Version, $InstalledVersion)
+                $ShouldInstall = $True
+            } else {
+                Write-LogVerbose ('Upstream Emacs version {0} is no newer than installed Emacs version {1}' -f $LatestDownload.Version, $InstalledVersion)
+            }
+        } else {
+            Write-LogVerbose 'No version of Emacs is installed'
+            $ShouldInstall = $True
+        }
+
+        Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -Completed
+
     }
-
-    Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -Completed
-
-    #TODO: TESTING
-    $ShouldInstall = $True
 
     if (-not $ShouldInstall) {
         Write-Progress -Id 1 -Activity 'Installing Emacs' -Completed
@@ -2526,10 +2533,12 @@ function Install-Emacs {
 
         if ($Workspace.TestInstall($TargetVersion)) {
             Write-LogVerbose "Emacs has already been downloaded and unpacked for version $TargetVersion"
+
             $Install = $Workspace.GetInstall($TargetVersion)
         } else {
             if ($Workspace.TestArchive($TargetVersion)) {
                 Write-LogVerbose "Eamcs has already been downloaded (but not unpacked) for version $TargetVersion"
+
                 $Archive = $Workspace.GetArchive($TargetVersion);
             } else {
                 Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Downloading Emacs version $TargetVersion..." -PercentComplete 71
@@ -2537,6 +2546,7 @@ function Install-Emacs {
 
                 $Archive = New-EmacsArchive $LatestDownload
             }
+
             Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Unpacking Emacs version $TargetVersion..." -PercentComplete 86
             Write-LogHost "Unpacking Emacs version $TargetVersion..."
 
@@ -2547,27 +2557,36 @@ function Install-Emacs {
         Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Executing Administrator commands...' -PercentComplete 60
         Write-LogHost "Executing Administrator commands..."
 
-        $AdminProcess = Start-Process -Wait powershell.exe -Verb RunAs -ArgumentList '-NoExit', '-Command', "& {
-            `$ErrorActionPreference = 'Stop'
-            Import-Module Cackledaemon
+        $ModulePath = (Get-Module Cackledaemon).Path
 
-            Write-Progress -Activity 'Installing Emacs' -CurrentOperation 'Moving files to $EmacsInstallLocation...' -PercentComplete 0
+        $AdminProcess = Start-Process -PassThru -Wait powershell.exe -Verb RunAs -ArgumentList '-Command', "& {
+            try {
+                `$ErrorActionPreference = 'Stop'
+                Import-Module '$ModulePath'
 
-            Write-LogHost 'Moving files to $EmacsInstallLocation...'
-            Update-EmacsInstall -Path $Install
+                Write-Progress -Activity 'Installing Emacs' -CurrentOperation 'Moving files to $EmacsInstallLocation...' -PercentComplete 0
 
-            Write-Progress -Activity 'Installing Emacs' -CurrentOperation 'Setting App Path registry keys...' -PercentComplete 1
+                Write-LogHost 'Moving files to $EmacsInstallLocation...'
+                Update-EmacsInstall -Path $Install
 
-            Write-LogHost 'Setting App Path registry keys...'
-            Set-EmacsAppPathRegistryKeys
+                Write-Progress -Activity 'Installing Emacs' -CurrentOperation 'Setting App Path registry keys...' -PercentComplete 1
 
-            Write-Progress -Activity 'Installing Emacs' -CurrentOperation 'Setting file type associations...' -PercentComplete 2
+                Write-LogHost 'Setting App Path registry keys...'
+                Set-EmacsAppPathRegistryKeys
 
-            Write-LogHost 'Setting file type associations...'
-            Install-FileTypeAssociations
+                Write-Progress -Activity 'Installing Emacs' -CurrentOperation 'Setting file type associations...' -PercentComplete 2
 
-            Write-Progress -Activity 'Installing Emacs' -Completed
+                Write-LogHost 'Setting file type associations...'
+                Install-FileTypeAssociations
+
+                Write-Progress -Activity 'Installing Emacs' -Completed
+            } catch {
+                Exit 1
+            }
         }"
+
+        $AdminProcess | Write-Host
+        $AdminProcess.ExitCode | Write-Host
 
         if ($AdminProcess.ExitCode) {
             Write-Progress -Id 1 -Activity 'Installing Emacs' -Completed
@@ -2784,7 +2803,7 @@ It would probably be bad to try to start an Emacs daemon if one is already
 running.
 
 if an Emacs daemon is being managed, then retrieving the process state should be
-successful and we can simply check to make sure that =Get-EmacsProcessFromPidFile=
+successful and we can simply check to make sure that =Get-ProcessFromPidFile=
 returns a non-=$null= value. However, it's also possible to start the Emacs
 daemon out-of-band, in which case we probably don't want to get involved either.
 To check for this, we use [[https://docs.microsoft.com/en-us/powershell/module/cimcmdlets/get-ciminstance?view=powershell-7][CIM]] to find emacs processes and then check to see if
@@ -2797,7 +2816,7 @@ function Get-UnmanagedEmacsDaemon () {
     $ManagedProcess = Get-ProcessFromPidFile
     return Get-CimInstance -Query "
         SELECT
-          ,*
+          *
         FROM Win32_Process
         WHERE
           Name = 'emacs.exe' OR Name = 'runemacs.exe'
@@ -2983,7 +3002,7 @@ function Get-EmacsDaemon {
     [CmdletBinding()]
     param()
 
-    Get-EmacsProcessFromPidFile
+    Get-ProcessFromPidFile
 }
 
 #+END_SRC
@@ -3165,7 +3184,7 @@ function Invoke-Applet {
     $ContextMenu.MenuItems.Add($LogRotateStatusItem) | Out-Null
 
     $AppletIcon.add_MouseDown({
-        $Process = Get-EmacsProcessFromPidFile
+        $Process = Get-ProcessFromPidFile
         if ($Process) {
             $DaemonStatusItem.Text = '[RUNNING] Emacs Daemon'
             $StartDaemonItem.Enabled = $False
