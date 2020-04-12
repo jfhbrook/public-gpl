@@ -3376,7 +3376,7 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
 @{
     RootModule = 'Cackledaemon.psm1'
 
-    ModuleVersion = '0.0.18'
+    ModuleVersion = '0.0.19'
     GUID = '10d14360-ee5c-4363-bfe8-f4116a8ce764'
 
     Author = 'Josh Holbrook'
