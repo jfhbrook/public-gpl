@@ -69,6 +69,266 @@ starting, stopping and restarting the Emacs daemon, functions and jobs for log
 management and rotation, and a tray icon for a lil' point-and-click action and
 notifications for if/when Emacs exits unexpectedly.
 
+* Installing Cackledaemon
+#+BEGIN_SRC powershell :tangle ./Installer.ps1
+#Requires -Version 5.1
+
+Write-Host 'Welcome to the Cackledaemon install wizard!'
+Write-Host ''
+Write-Host 'This script will guide you through the process of installing/updating Cackledaemon and Emacs.'
+Write-Host ''
+
+$InstalledModule = Get-InstalledModule 'Cackledaemon'
+
+if ($InstalledModule) {
+    Write-Host "Cackledaemon is already installed, but there might be " -NoNewLine
+    Write-Host "updates..!" -ForegroundColor Yellow -NoNewLine
+    Write-Host " :)"
+    Write-Host "This script can " -NoNewLine
+    Write-Host "optionally" -ForegroundColor Green -NoNewLine
+    Write-Host " update the Cackledaemon module for " -NoNewLine
+    Write-Host "all users" -ForegroundColor Red -NoNewLine
+    Write-Host ". It requires, and will prompt for, " -NoNewLine
+    Write-Host "Administrator privileges" -ForegroundColor Cyan -NoNewLine
+    Write-Host '.'
+
+    $InstallCackledaemonChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Reinstall the Cackledaemon module for all users. This will install module updates."
+    $DontInstallCackledaemonChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Don't reinstall the Cackledaemon module. It's already installed, but there may be updates."
+
+    $InstallCackledaemon = -not [boolean]$host.UI.PromptForChoice( `
+      "Do you want to reinstall Cackledaemon?", `
+      "Whaddaya think?", `
+      @($InstallCackledaemonChoice, $DontInstallCackledaemonChoice), `
+      0 `
+    )
+} else {
+    Write-Host "Cackledaemon " -NoNewLine
+    Write-Host "needs to be installed!" -ForegroundColor Yellow
+    Write-Host "This script will install the Cackledaemon module for " -NoNewLine
+    Write-Host "all users" -ForegroundColor Red -NoNewLine
+    Write-Host ". It requires, and will prompt for, " -NoNewLine
+    Write-Host "Administrator privileges" -ForegroundColor Cyan -NoNewLine
+    Write-Host "."
+
+    $InstallCackledaemonChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Install the Cackledaemon module for all users. This is required in order to use Cackledaemon."
+    $DontInstallCackledaemonChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Don't install the Cackledaemon module. This will abort the installation process."
+
+    $InstallCackledaemon = -not [boolean]$host.UI.PromptForChoice( `
+      "Do you want to install Cackledaemon?", `
+      "Whaddaya think?", `
+      @($InstallCackledaemonChoice, $DontInstallCackledaemonChoice), `
+      0 `
+    )
+}
+Write-Host ''
+
+if ($InstallCackledaemon) {
+    Write-Host 'Installing the Cackledaemon module...'
+    Start-Process -Wait -Verb RunAs powershell.exe -ArgumentList '-Command', "& {
+        Write-Host 'Installing the Cackledaemon module...'
+        Install-Module -Force Cackledaemon
+        Write-Host 'All done!'
+    }"
+} elseif (-not $InstalledModule) {
+    Write-Host 'Cackledaemon is ' -NoNewLine
+    Write-Host 'not installed' -ForegroundColor Red -NoNewLine
+    Write-Host ' and the script can not continue.'
+    Write-Host 'Have a nice day!'
+    Exit
+}
+
+Import-Module Cackledaemon
+
+if (Test-Path $CackledaemonWD) {
+    Write-Host "$CackledaemonWD already exists - nothing to do here!"
+} else {
+    Write-Host "Time to initialize " -NoNewLine
+    Write-Host $CackledaemonWD -ForegroundColor Yellow -NoNewLine
+    Write-Host "!"
+
+    $ModuleDirectory = Split-Path -Path (Get-Module Cackledaemon).Path -Parent
+    $StartMenuPath = Join-Path $Env:AppData 'Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
+    $ShortcutsCsvPath = Join-Path $ModuleDirectory 'Shortcuts.csv'
+    $FileTypeAssociationsCsvPath = Join-Path $ModuleDirectory 'FileTypeAssociations.csv'
+
+    Write-Host "By default, Cackledaemon will " -NoNewLine
+    Write-Host "create these shortcuts" -ForegroundColor Green -NoNewLine
+    Write-Host " inside the 'GNU Emacs' folder in the user's Start Menu when installing Emacs:"
+    Write-Host ''
+
+    Import-Csv -Path $ShortcutsCsvPath | ForEach-Object {
+        Write-Host "- " -NoNewLine
+        Write-Host ("{0}\{1}.lnk" -f $StartMenuPath, $_.ShortcutName) -ForegroundColor Green -NoNewLine
+        Write-Host " -> " -NoNewLine
+        Write-Host $_.EmacsBinaryName -ForegroundColor Yellow
+    } | Out-Null
+    Write-Host ''
+    Write-Host "You may " -NoNewLine
+    Write-Host "edit this config" -ForegroundColor Cyan -NoNewLine
+    Write-Host " at " -NoNewLine
+    Write-Host "$CackledaemonWD\Shortcuts.csv" -ForegroundColor Yellow -NoNewLine
+    Write-Host " and re-run the Emacs install step at " -NoNewLine
+    Write-Host "any time" -ForegroundColor Green -NoNewLine
+    Write-Host " to change these shortcuts."
+
+    $InstallShortcutsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Create these shortcuts in the Start Menu. You can edit this CSV and re-run this step at any time."
+    $DontInstallShortcutsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Don't create any shortcuts in the Start Menu at this time. You can create a fresh CSV and re-run this step at any time."
+
+    $NoShortcuts = [boolean]$host.UI.PromptForChoice( `
+      "Do you want to use these shortcuts?", `
+      "Whaddaya think?", `
+      @($InstallShortcutsChoice, $DontInstallShortcutsChoice), `
+      0
+    )
+    Write-Host ''
+
+    Write-Host "By default, Cackledaemon will " -NoNewLine
+    Write-Host "create" -ForegroundColor Green -NoNewLine
+    Write-Host " these " -NoNewLine
+    Write-Host "system-wide" -ForegroundColor Red -NoNewLine
+    Write-Host " file type associations:"
+    Write-Host ""
+    Import-Csv -Path $FileTypeAssociationsCsvPath | ForEach-Object {
+        Write-Host "- " -NoNewLine
+        Write-Host $_.Extension -ForegroundColor Green -NoNewLine
+        Write-Host " -(" -NoNewLine
+        Write-Host $_.FileType -ForegroundColor Cyan -NoNewLine
+        Write-Host ")-> " -NoNewLine
+        Write-Host $_.Command -ForegroundColor Yellow
+    } | Out-Null
+    Write-Host ""
+    Write-Host "You may " -NoNewLine
+    Write-Host "edit this config" -ForegroundColor Cyan -NoNewLine
+    Write-Host " at " -NoNewLine
+    Write-Host "$CackledaemonWD\FileTypeAssociations.csv" -ForegroundColor Yellow -NoNewLine
+    Write-Host " and re-run the Emacs install step at " -NoNewLine
+    Write-Host "any time" -ForegroundColor Green -NoNewLine
+    Write-Host " to create new associations. You may also " -NoNewLine
+    Write-Host "manually create " -ForegroundColor Cyan -NoNewLine
+    Write-Host "user-level" -ForegroundColor Green -NoNewLine
+    Write-Host " file type associations inside " -NoNewLine
+    Write-Host "Windows Explorer" -ForegroundColor Cyan -NoNewLine
+    Write-Host '.'
+
+    $InstallAssociationsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Create these file type associations for all users. You can edit this CSV and re-run this step at any time."
+    $DontInstallAssociationsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Don't create any file type associations. You can edit this CSV and re-run this step at any time."
+
+    $NoFileTypeAssociations = [boolean]$host.UI.PromptForChoice( `
+      "Do you want to use these file type associations?", `
+      "Whaddaya think?", `
+      @($InstallAssociationsChoice, $DontInstallAssociationsChoice), `
+      0
+    )
+
+    Write-Host "Initializing $CackledaemonWD..."
+    New-CackledaemonWD -NoShortcuts $NoShortcuts -NoFileTypeAssociations $NoFileTypeAssociations | Out-Null
+
+}
+
+Write-Host "Checking the state of Emacs..."
+Write-Host ''
+
+$EmacsCommand = Get-Command 'emacs.exe'
+
+if ($EmacsCommand) {
+    if (Test-EmacsExe) {
+        Write-Host "Emacs is already installed but it couldn't hurt to check for " -NoNewLine
+        Write-Host "updates..! :)" -ForegroundColor Yellow
+        Write-Host "This script can " -NoNewLine
+        Write-Host "optionally" -ForegroundColor Green -NoNewLine
+        Write-Host " install updates to Emacs for " -NoNewLine
+        Write-Host "all users" -ForegroundColor Red -NoNewLine
+        Write-Host ". It requires, and will prompt for, " -NoNewLine
+        Write-Host "Administrator privileges" -ForegroundColor Cyan -NoNewLine
+        Write-Host '.'
+
+        $InstallEmacsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Check for and install any available Emacs updates."
+        $DontInstallEmacsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Don't check for Emacs updates. Emacs is already installed, so this is probably OK. You can run this manually at any time by importing the Cackledaemon module and running 'Install-Emacs'."
+        $InstallEmacs = -not [boolean]$host.UI.PromptForChoice( `
+            "Do you want to check for updates to Emacs?", `
+            "Whaddaya think?", `
+            @($InstallEmacsChoice, $DontInstallEmacsChoice), `
+            0 `
+        )
+    } else {
+        Write-Host "An " -NoNewLine
+        Write-Host "unmanaged Emacs" -ForegroundColor Red -NoNewLine
+        Write-Host " is " -NoNewLine
+        Write-Host "already on your `$Path" -ForegroundColor Red -NoNewLine
+        Write-Host "! This script will probably cause " -NoNewLine
+        Write-Host "surprising behavior" -ForegroundColor Yellow -NoNewLine
+        Write-Host " but is " -NoNewLine
+        Write-Host "game to try" -ForegroundColor Cyan -NoNewLine
+        Write-Host "!"
+
+        $InstallEmacsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Install a managed Emacs alongside the unmanaged Emacs version already detected. This will likely cause surprising behavior - it is recommended that you read the manual before continuing."
+        $DontInstallEmacsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Don't install a managed Emacs. This is the safest choice, but means that you can't take advantage of Cackledaemon's features. You can run this manually at any time by importing the Cackledaemon module and running 'Install-Emacs'."
+        $InstallEmacs = -not [boolean]$host.UI.PromptForChoice( `
+            "Do you want to install a managed Emacs alongside the version of Emacs already installed?", `
+            "Whaddaya think?", `
+            @($InstallEmacsChoice, $DontInstallEmacsChoice), `
+            1 `
+        )
+    }
+} else {
+    Write-Host "Emacs " -NoNewLine
+    Write-Host "needs to be installed!" -ForegroundColor Yellow
+    Write-Host "This script will install Emacs for " -NoNewLine
+    Write-Host "all users" -ForegroundColor Red -NoNewLine
+    Write-Host ". It requires, and will prompt for, " -NoNewLine
+    Write-Host "Administrator privileges" -ForegroundColor Cyan -NoNewLine
+    Write-Host "."
+
+    $InstallEmacsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Install Emacs. This is required in order to use Cackledaemon and Emacs."
+    $DontInstallEmacsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Don't install Emacs. This will abort the installation process."
+    $InstallEmacs = -not [boolean]$host.UI.PromptForChoice( `
+        "Do you want to install Emacs?", `
+        "Whaddaya think?", `
+        @($InstallEmacsChoice, $DontInstallEmacsChoice), `
+        0 `
+    )
+}
+
+if ($InstallEmacs) {
+    Write-Host 'Installing Emacs...'
+    Install-Emacs
+} else {
+    Write-Host 'Not installing Emacs.'
+}
+
+if (-not (Test-EmacsExe)) {
+    Write-Host 'Emacs is ' -NoNewLine
+    Write-Host 'not installed' -ForegroundColor Red -NoNewLine
+    Write-Host ' and the script can not continue.'
+    Write-Host 'Have a nice day!'
+    Exit
+}
+
+Write-Host ''
+Write-Host "Cackledaemon can also set up the " -NoNewLine
+Write-Host "user's " -ForegroundColor Cyan -NoNewLine
+Write-Host " environment by configuring the user's `$Path and `$HOME and by creating shortcuts. This touches the user's " -NoNewLine
+Write-Host "registry" -ForegroundColor Yellow -NoNewLine
+Write-Host " but doesn't require Administrator privileges."
+
+$InstallEnvironmentChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Set up the user's environment for Emacs. This isn't strictly required but is nice to have."
+$DontInstallEnvironmentChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Don't set up the user's environment for Emacs. Emacs will be installed but it will be tough for the user to run."
+$InstallEnvironment = -not [boolean]$host.UI.PromptForChoice( `
+  "Do you want to set up the user environment?",
+  "Whaddaya think?", `
+  @($InstallEnvironmentChoice, $DontInstallEnvironmentChoice), `
+  0 `
+)
+
+if ($InstallEnvironment) {
+    Write-Host "Setting up the user's environment..."
+    Install-EmacsUserEnvironment
+} else {
+    Write-Host "Not touching the user's environment."
+}
+Write-Host "Have a nice day!"
+
+#+END_SRC
 * Configuration and State
 ** Working Directory
 Cackledaemon needs a place to store configurations, logs and process metadata.
@@ -79,15 +339,22 @@ $CackledaemonWD = Join-Path $Env:AppData 'Cackledaemon'
 $CackledaemonConfigLocation = Join-Path $CackledaemonWD 'Configuration.ps1'
 
 function New-CackledaemonWD {
+    param(
+        [switch]$NoShortcuts,
+        [switch]$NoFileTypeAssociations
+    )
     New-Item -Path $CackledaemonWD -ItemType directory
 
     $ModuleDirectory = Split-Path -Path (Get-Module Cackledaemon).Path -Parent
 
-    @('Configuration.ps1', 'Shortcuts.csv', 'FileTypeAssociations.csv') | ForEach-Object {
-        $Source = Join-Path $ModuleDirectory $_
-        $Destination = Join-Path $CackledaemonWD $_
+    Copy-Item (Join-Path $ModuleDirectory 'Configuration.ps1') (Join-Path $CackledaemonWD 'Configuration.ps1')
 
-        Copy-Item $Source $Destination
+    if (-not $NoShortcuts) {
+        Copy-Item (Join-Path $ModuleDirectory 'Shortcuts.csv') (Join-Path $CackledaemonWD 'Shortcuts.csv')
+    }
+
+    if (-not $NoFileTypeAssociations) {
+        Copy-Item (Join-Path $ModuleDirectory 'FileTypeAssociations.csv') (Join-Path $CackledaemonWD 'FileTypeAssociations.csv')
     }
 }
 
@@ -138,17 +405,55 @@ function Restore-StandardEnvironment {
 Describe "New-CackledaemonWD" {
     BeforeEach {
         Initialize-TestEnvironment
+        Remove-Item -Recurse "$TestDrive\Cackledaemon"
     }
 
     AfterEach {
         Restore-StandardEnvironment
     }
 
-    It "creates a new and initialized working directory" {
-        'TestDrive:\Cackledaemon' | Should -Exist
-        'TestDrive:\Cackledaemon\Configuration.ps1' | Should -Exist
-        'TestDrive:\Cackledaemon\Shortcuts.csv' | Should -Exist
-        'TestDrive:\Cackledaemon\FileTypeAssociations.csv' | Should -Exist
+    Context 'when shortcuts and file type associations are both enabled' {
+        It "creates a new and initialized working directory" {
+            New-CackledaemonWD
+
+            'TestDrive:\Cackledaemon' | Should -Exist
+            'TestDrive:\Cackledaemon\Configuration.ps1' | Should -Exist
+            'TestDrive:\Cackledaemon\Shortcuts.csv' | Should -Exist
+            'TestDrive:\Cackledaemon\FileTypeAssociations.csv' | Should -Exist
+        }
+    }
+
+    Context 'when shortcuts are disabled' {
+        It "creates a new and initialized working directory without shortcuts" {
+            New-CackledaemonWD -NoShortcuts
+
+            'TestDrive:\Cackledaemon' | Should -Exist
+            'TestDrive:\Cackledaemon\Configuration.ps1' | Should -Exist
+            'TestDrive:\Cackledaemon\Shortcuts.csv' | Should -Not -Exist
+            'TestDrive:\Cackledaemon\FileTypeAssociations.csv' | Should -Exist
+        }
+    }
+
+    Context 'when file type associations are disabled' {
+        It "creates a new and initialized working directory without file type associations" {
+            New-CackledaemonWD -NoFileTypeAssociations
+
+            'TestDrive:\Cackledaemon' | Should -Exist
+            'TestDrive:\Cackledaemon\Configuration.ps1' | Should -Exist
+            'TestDrive:\Cackledaemon\Shortcuts.csv' | Should -Exist
+            'TestDrive:\Cackledaemon\FileTypeAssociations.csv' | Should -Not -Exist
+        }
+    }
+
+    Context 'when both shortcuts and file type associations are disabled' {
+        It "creates a new and initialized working directory without file type associations" {
+            New-CackledaemonWD -NoShortcuts -NoFileTypeAssociations
+
+            'TestDrive:\Cackledaemon' | Should -Exist
+            'TestDrive:\Cackledaemon\Configuration.ps1' | Should -Exist
+            'TestDrive:\Cackledaemon\Shortcuts.csv' | Should -Not -Exist
+            'TestDrive:\Cackledaemon\FileTypeAssociations.csv' | Should -Not -Exist
+        }
     }
 }
 
@@ -712,6 +1017,8 @@ Describe 'Write-Log' {
         }
 
         It ('logs at the {0} level' -f $_) {
+            Mock -Module Cackledaemon Write-Host {}
+           
             Invoke-Expression "Write-Log${_} 'Test message'" 3> $null
 
             "$TestDrive/Cackledaemon/Cackledaemon.log" | Should -FileContentMatch "^$TimestampRegexp ${_}: Test message$"
@@ -2110,6 +2417,30 @@ function Install-FileTypeAssociations {
 #+END_SRC
 ** Putting It All Together
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Install-EmacsUserEnvironment {
+    $ErrorActionPreference = 'Stop'
+
+    Write-Progress -Id 3 -Activity 'Setting up the Emacs user environment' -CurrentOperation "Updating the user's `$Path variable..." -PercentComplete 0
+    Write-LogHost "Updating the user's `$Path variable..."
+
+    Set-EmacsPathEnvVariable
+
+    Write-Progress -Id 3 -Activity 'Setting up the Emacs user environment' -CurrentOperation "Setting the user's `$HOME variable..." -PercentComplete 33
+    Write-LogHost "Setting the user's `$HOME variable..."
+
+    Set-HomeEnvVariable
+
+    Write-Progress -Id 3 -Activity 'Setting up the Emacs user environment' -CurrentOperation "Installing shortcuts..." -PercentComplete 67
+    Write-LogHost "Installing shortcuts..."
+
+    Install-Shortcuts
+
+    Write-Progress -Id 3 -Activity 'Setting up the Emacs user environment' -Completed
+}
+
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Install-Emacs {
     $ErrorActionPreference = 'Stop'
 
@@ -2121,13 +2452,13 @@ function Install-Emacs {
     if (Test-Workspace) {
         $Workspace = Get-Workspace
     } else {
-        Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Creating workspace...' -PercentComplete 10
+        Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Creating workspace...' -PercentComplete 14
         Write-LogVerbose 'Creating new workspace...'
 
         $Workspace = New-Workspace
     }
 
-    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking the Emacs website for the latest available download...' -PercentComplete 20
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking the Emacs website for the latest available download...' -PercentComplete 29
     Write-LogHost 'Checking the Emacs website for the latest available download...'
 
     $LatestDownload = Get-LatestEmacsDownload
@@ -2136,7 +2467,7 @@ function Install-Emacs {
 
     $ShouldInstall = $False
 
-    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking if Emacs needs to be installed or updated...' -PercentComplete 30
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking if Emacs needs to be installed or updated...' -PercentComplete 43
     Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -CurrentOperation "Looking for an Emacs install in $EmacsInstallLocation..." -PercentComplete 0
     if (Test-EmacsExe) {
         Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -CurrentOperation 'Running "Emacs --version"...' -PercentComplete 33
@@ -2145,7 +2476,7 @@ function Install-Emacs {
 
         Write-LogVerbose ('Version {0} of Emacs is installed' -f $InstalledVersion)
 
-        Write-Progress -Activity 'Checking the currently installed Emacs version' -CurrentOperation 'Comparing versions...' -PercentComplete 67
+        Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -CurrentOperation 'Comparing versions...' -PercentComplete 57
         if ($LatestDownload.Version -gt $InstalledVersion) {
             Write-LogVerbose ('Upstream Emacs version {0} is newer than installed Emacs version {1}' -f $LatestDownload.Version, $InstalledVersion)
             $ShouldInstall = $True
@@ -2157,8 +2488,9 @@ function Install-Emacs {
         $ShouldInstall = $True
     }
 
+    Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -Completed
+
     if (-not $ShouldInstall) {
-        Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -Completed
         Write-Progress -Id 1 -Activity 'Installing Emacs' -Completed
         Write-LogHost 'Emacs is currently installed and at the latest available version.'
         return
@@ -2174,12 +2506,12 @@ function Install-Emacs {
             Write-LogVerbose "Eamcs has already been downloaded (but not unpacked) for version $TargetVersion"
             $Archive = $Workspace.GetArchive($TargetVersion);
         } else {
-            Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Downloading Emacs version $TargetVersion..." -PercentComplete 40
+            Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Downloading Emacs version $TargetVersion..." -PercentComplete 71
             Write-LogHost "Downloading Emacs version $TargetVersion..."
 
             $Archive = New-EmacsArchive $LatestDownload
         }
-        Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Unpacking Emacs version $TargetVersion..." -PercentComplete 50
+        Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Unpacking Emacs version $TargetVersion..." -PercentComplete 86
         Write-LogHost "Unpacking Emacs version $TargetVersion..."
 
         $Install = Export-EmacsArchive $Archive
@@ -2189,7 +2521,8 @@ function Install-Emacs {
     Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Executing Administrator commands...' -PercentComplete 60
     Write-LogHost "Executing Administrator commands..."
 
-    Start-Process -Wait powershell.exe -Verb RunAs -ArgumentList '-Command' "{
+    Start-Process -Wait powershell.exe -Verb RunAs -ArgumentList '-Command', "& {
+        `$ErrorActionPreference = 'Stop'
         Import-Module Cackledaemon
 
         Write-Progress -Activity 'Installing Emacs' -CurrentOperation 'Moving files to $EmacsInstallLocation...' -PercentComplete 0
@@ -2210,23 +2543,7 @@ function Install-Emacs {
         Write-Progress -Activity 'Installing Emacs' -Completed
     }"
 
-    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Updating the user's `$Path variable..." -PercentComplete 70
-    Write-LogHost "Updating the user's `$Path variable..."
-
-    Set-EmacsPathEnvVariable
-
-    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Setting the user's `$HOME variable..." -PercentComplete 80
-
-    Write-LogHost "Setting the user's `$HOME variable..."
-    Set-HomeEnvVariable
-
-    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Installing shortcuts..." -PercentComplete 90
-
-    Write-LogHost "Installing shortcuts..."
-    Install-Shortcuts
-
-    Write-Progress -Activity 'Installing Emacs' -Completed
-
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -Completed
     Write-LogHost "Emacs $TargetVersion is installed and ready to rock!"
 }
 
@@ -2985,6 +3302,7 @@ Export-ModuleMember `
       'Get-WShell',
       'Get-Workspace',
       'Install-Emacs',
+      'Install-EmacsUserEnvironment',
       'Install-Shortcuts',
       'Invoke-Applet',
       'Invoke-LogRotate',
@@ -3045,6 +3363,8 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
 
     Description = 'An Emacs installation and runtime manager for Windows'
 
+    PowerShellVersion = '5.1'
+
     # Modules that must be imported into the global environment prior to importing this module
     # RequiredModules = @()
 
@@ -3077,6 +3397,7 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
         'Get-WShell',
         'Get-Workspace',
         'Install-Emacs',
+        'Install-EmacsUserEnvironment',
         'Install-Shortcuts',
         'Invoke-Applet',
         'Invoke-LogRotate',
@@ -3117,8 +3438,10 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
     FileList = @(
         'Cackledaemon.psm1',
         'Cackledaemon.psd1',
-        'DefaultConfiguration.ps1',
-        'COPYING'
+        'Configuration.ps1',
+        'COPYING',
+        'FileTypeAssociations.csv',
+        'Shortcuts.csv'
     )
     ModuleList = @('.\Cackledaemon.psm1')
 
@@ -3178,6 +3501,7 @@ This emacs batch script tangles ~cackledaemon.org~ and generates the ~README.md~
 #+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
 task Build {
     emacs.exe --batch --load build.el
+    Copy-Item 'COPYING' .\Cackledaemon\COPYING -ErrorAction 'SilentlyContinue'
     Remove-Item 'README.md~' -ErrorAction 'SilentlyContinue'
 }
 
