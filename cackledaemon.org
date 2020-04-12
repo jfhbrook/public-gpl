@@ -2440,7 +2440,7 @@ function Install-FileTypeAssociations {
 Windows doesn't really have an analog to sudo for PowerShell, but we still have
 a need to run commands with elevated privileges.
 
-The [[https://knowyourmeme.com/memes/galaxy-brain][tiny brain]] version of this is to imply run ~Start-Process~ with the ~-Verb
+The [[https://knowyourmeme.com/memes/galaxy-brain][tiny brain]] version of this is to simply run ~Start-Process~ with the ~-Verb
 RunAs~ flag turned on and the desired code to be executed inside of a string.
 This works and is relatively safe. However, any IO that happens in that process
 stays with that process, and if the window is hidden or the process surprise
