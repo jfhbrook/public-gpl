@@ -2442,9 +2442,9 @@ a need to run commands with elevated privileges.
 
 The [[https://knowyourmeme.com/memes/galaxy-brain][tiny brain]] version of this is to imply run ~Start-Process~ with the ~-Verb
 RunAs~ flag turned on and the desired code to be executed inside of a string.
-This works. However, any IO that happens in that process stays with that
-process, and if the window is hidden or the process surprise exits then any
-information not written to a log file is lost.
+This works and is relatively safe. However, any IO that happens in that process
+stays with that process, and if the window is hidden or the process surprise
+exits then any information not written to a log file is lost.
 
 This procedure uses [[https://rkeithhill.wordpress.com/2014/11/01/windows-powershell-and-named-pipes/][named pipes]] to send information between the Administrator
 process and the parent process. The parent process takes payloads received from
@@ -2453,145 +2453,138 @@ script block for the Administrator process is templated to overlay aliass on
 Write-Host, Write-Error and Exit to send this information to the pipe
 accordingly, and to do cleanup on exit.
 
-When this works it works, but it is shockingly brittle. This is largely because
-the ~WaitForConnection~ method is blocking, is not ~C-c~-able, and will stop the
-parent PowerShell process from exiting.
+When on the happy path, this means that you can pass a string or script block
+(which will implicitly get stringified correctly) to this function and it will
+run the code in an Administrator shell, seamlessly dumping the output into the
+parent terminal, "just like sudo".
 
-In general: This procedure evaluates string inputs at elevated privilege
-levels, so it's imperative that any script authors ensure that strings passed to
-this function are sound and not vulnerable to injections or breakage.
+However, it's not very sophisticated. It only covers ~Write-Host~ and
+~Write-Error~ for output, leaving ~Debug~, ~Verbose~ and ~Information~ out in
+the cold. It also does very little to handle rich data structures or even
+multi-line strings. Code that gets passed to this function needs to be
+constructed carefully so as to cause the expected output behavior. If this were
+going to be turned into a separate module, more care would need to be taken to
+ensure complete coverage of IO functions.
 
+It's also important to note that named pipes in Windows are shockingly brittle.
+To wit: The ~WaitForConnection~ method is blocking, is not ~C-c~-able, and will
+stop the parent PowerShell process from exiting.
+
+TL;DR: This procedure evaluates string inputs at elevated privilege levels with
+the added ability of being able to brick the host process, so it's imperative
+that any script authors ensure that strings passed to this function are sound
+and not vulnerable to injections or error explosions.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Invoke-AsAdministrator {
     param(
         [string]$Command,
         [int]$IOInterval=1,  # 1 second
-        [int]$JobTimeout=300  # 5 minutes
     )
 
-    $Job = Start-Job -Name 'PSeudoJob' -ArgumentList @($IOInterval, $Command) -ScriptBlock {
-        $IOInterval = $args[0]
-        $Command = $args[1]
+    $ErrorActionPreference = 'Stop'
 
-        $ErrorActionPreference = 'Stop'
+    $PipeName = ("PSeudoPipe_" + (New-Guid))
 
-        $PipeName = ("PSeudoPipe_" + (New-Guid))
+    $Server = New-Object System.IO.Pipes.NamedPipeServerStream $PipeName, 'In'
 
-        $Server = New-Object System.IO.Pipes.NamedPipeServerStream $PipeName, 'In'
+    $Process = Start-Process `
+        -PassThru `
+        -Verb RunAs `
+        powershell.exe -ArgumentList '-WindowStyle', 'hidden', '-Command', "& {
+            `$NamedPipeClient = New-Object System.IO.Pipes.NamedPipeClientStream '.', '$PipeName', 'Out'
+            `$NamedPipeClient.Connect()
+            `$NamedPipeWriter = New-Object System.IO.StreamWriter `$NamedPipeClient
+            `$NamedPipeWriter.AutoFlush = `$True
 
-        $Process = Start-Process `
-          -PassThru `
-          -Verb RunAs `
-          powershell.exe -ArgumentList '-WindowStyle', 'hidden', '-Command', "& {
-              `$NamedPipeClient = New-Object System.IO.Pipes.NamedPipeClientStream '.', '$PipeName', 'Out'
-              `$NamedPipeClient.Connect()
-              `$NamedPipeWriter = New-Object System.IO.StreamWriter `$NamedPipeClient
-              `$NamedPipeWriter.AutoFlush = `$True
+            function Send-Host {
+                param(
+                    [string]`$Message
+                )
 
-              function Send-Host {
-                  param(
-                      [string]`$Message
-                  )
-
-                  `$NamedPipeWriter.WriteLine('HOST:' + `$Message)
-              }
-
-              function Send-Error {
-                  param(
-                      [string]`$Message
-                  )
-
-                  `$NamedPipeWriter.WriteLine('ERROR:' + `$Message)
-              }
-
-              function Send-Exit {
-                  param(
-                      [int]`$Code
-                  )
-
-                  `$NamedPipeWriter.WriteLine('EXIT:' + `$Code)
-                  `$NamedPipeClient.Dispose()
-              }
-
-              Set-Alias -Name Write-Host -Value Send-Host
-              Set-Alias -Name Write-Error -Value Send-Error
-              Set-Alias -Name Exit -Value Send-Exit
-
-              `$Error = `$null
-              try {
-                  Invoke-Expression '$Command'
-              } catch {
-                  `$Error = `$_
-              } finally {
-                  if (`$Error) {
-                      Send-Error `$Error
-                      Send-Exit 1
-                  } else {
-                      Send-Exit 0
-                  }
-              }
-        }"
-
-        Start-Sleep -Seconds $IOInterval
-
-        if ($Process.HasExited) {
-            $Server.Dispose()
-            return
-        }
-
-        $Server.WaitForConnection()
-
-        $Reader = New-Object System.IO.StreamReader $Server
-
-        while ($True) {
-            $IOStart = Get-Date
-
-            $Line = $Reader.ReadLine()
-
-            while ($Line) {
-                $Line | Write-Output
-                $Line = $Reader.ReadLine()
+                `$NamedPipeWriter.WriteLine('HOST:' + `$Message)
             }
 
-            if ($Process.HasExited) {
-                break
+            function Send-Error {
+                param(
+                    [string]`$Message
+                )
+
+                `$NamedPipeWriter.WriteLine('ERROR:' + `$Message)
             }
 
-            Start-Sleep -Seconds ($args[0] - ((Get-Date) - $IOStart).TotalSeconds)
-        }
+            function Send-Exit {
+                param(
+                    [int]`$Code
+                )
 
+                `$NamedPipeWriter.WriteLine('EXIT:' + `$Code)
+                `$NamedPipeClient.Dispose()
+            }
+
+            Set-Alias -Name Write-Host -Value Send-Host
+            Set-Alias -Name Write-Error -Value Send-Error
+            Set-Alias -Name Exit -Value Send-Exit
+
+            `$Error = `$null
+            try {
+                Invoke-Expression '$Command'
+            } catch {
+                `$Error = `$_
+            } finally {
+                if (`$Error) {
+                    Send-Error `$Error
+                    Send-Exit 1
+                } else {
+                    Send-Exit 0
+                }
+            }
+    }"
+
+    # We give the process a chance to not immediately hard crash, in the hopes
+    # that we don't cause a lock by waiting for a connection we never receive
+
+    Start-Sleep -Seconds $IOInterval
+
+    if ($Process.HasExited) {
         $Server.Dispose()
+        return
     }
 
-    $Start = Get-Date
 
-    while (((Get-Date) - $Start).TotalSeconds -lt $JobTimeout) {
+    # Here goes nothin'
+    $Server.WaitForConnection()
+
+    $Reader = New-Object System.IO.StreamReader $Server
+
+    while ($True) {
         $IOStart = Get-Date
 
-        Receive-Job -Job $Job | ForEach-Object {
-            if ($_.StartsWith('HOST:')) {
-                $_ -replace '^HOST\:', '' | Write-Host
-            } elseif ($_.StartsWith('ERROR:')) {
-                $_ -replace '^ERROR\:', '' | Write-Error
-            } elseif ($_.StartsWith('EXIT:')) {
-                $_ -replace '^EXIT\:', '' | ForEach-Object {
+        $Line = $Reader.ReadLine()
+
+        while ($Line) {
+            if ($Line.StartsWith('HOST:')) {
+                $Line -replace '^HOST\:', '' | Write-Host
+            } elseif ($Line.StartsWith('ERROR:')) {
+                $Line -replace '^ERROR\:', '' | Write-Error
+            } elseif ($Line.StartsWith('EXIT:')) {
+                $Line -replace '^EXIT\:', '' | ForEach-Object {
                     Write-Verbose "Administrator shell exited with code $_."
                 }
             } else {
-                $_ | Write-Warning
+                $Line | Write-Warning
             }
+            $Line = $Reader.ReadLine()
         }
 
-        if ($Job.State -ne 'Running') {
+        if ($Process.HasExited) {
             break
         }
 
-        Start-Sleep -Seconds ($IOInterval - ((Get-Date) - $IOStart).TotalSeconds)
+        Start-Sleep -Seconds ($args[0] - ((Get-Date) - $IOStart).TotalSeconds)
     }
 
-    Stop-Job $Job -ErrorAction 'SilentlyContinue'
-    Remove-Job $Job -ErrorAction 'SilentlyContinue'
+    $Server.Dispose()
 }
 
 #+END_SRC
