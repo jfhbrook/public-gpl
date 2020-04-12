@@ -2711,31 +2711,18 @@ function Install-Emacs {
 
         $ModulePath = (Get-Module Cackledaemon).Path
 
-        $AdminProcess = Start-Process -PassThru -Wait powershell.exe -Verb RunAs -ArgumentList '-Command', "& {
-            try {
-                `$ErrorActionPreference = 'Stop'
-                Import-Module '$ModulePath'
+        Invoke-AsAdministrator {
+            Import-Module '$ModulePath'
 
-                Write-Progress -Activity 'Installing Emacs' -CurrentOperation 'Moving files to $EmacsInstallLocation...' -PercentComplete 0
+            Write-Host 'Moving files to $EmacsInstallLocation...'
+            Update-EmacsInstall -Path $Install
 
-                Write-LogHost 'Moving files to $EmacsInstallLocation...'
-                Update-EmacsInstall -Path $Install
+            Write-Host 'Setting App Path registry keys...'
+            Set-EmacsAppPathRegistryKeys
 
-                Write-Progress -Activity 'Installing Emacs' -CurrentOperation 'Setting App Path registry keys...' -PercentComplete 1
-
-                Write-LogHost 'Setting App Path registry keys...'
-                Set-EmacsAppPathRegistryKeys
-
-                Write-Progress -Activity 'Installing Emacs' -CurrentOperation 'Setting file type associations...' -PercentComplete 2
-
-                Write-LogHost 'Setting file type associations...'
-                Install-FileTypeAssociations
-
-                Write-Progress -Activity 'Installing Emacs' -Completed
-            } catch {
-                Exit 1
-            }
-        }"
+            Write-Host 'Setting file type associations...'
+            Install-FileTypeAssociations
+        }
 
         $AdminProcess | Write-Host
         $AdminProcess.ExitCode | Write-Host
