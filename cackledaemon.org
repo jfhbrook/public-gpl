@@ -2098,7 +2098,11 @@ function Set-EmacsAppPathRegistryKeys {
         $BinPath = Join-Path $EmacsInstallLocation "bin\$_"
 
         if (Test-Path $BinPath) {
-            Set-Item -Path $RegistryPath -Value $BinPath
+            if (Test-Path -Path $RegistryPath) {
+                Set-Item -Path $RegistryPath -Value $BinPath
+            } else {
+                New-Item -Path $RegistryPath -Value $BinPath
+            }
             Set-ItemProperty -Path $RegistryPath -Name Path -Value $Path
         } else {
             Write-Error -Message ("{0} doesn't exist - refusing to write this to the registry." -f $BinPath) `
@@ -2139,23 +2143,44 @@ Describe 'Set-EmacsAppPathRegistryKeys' {
         }
 
         It 'sets the Emacs app path registry keys' {
+            Mock -Module Cackledaemon Test-Path {
+                if ($Path -match '^HKLM') {
+                    return $PATH -match '\\emacs.exe$'
+                } else {
+                    return $True
+                }
+            }
+            Mock -Module Cackledaemon New-Item {}
             Mock -Module Cackledaemon Set-Item {}
             Mock -Module Cackledaemon Set-ItemProperty {}
 
             Set-EmacsAppPathRegistryKeys
 
-            Assert-MockCalled -Module Cackledaemon Set-Item -Times 4
+            Assert-MockCalled -Module Cackledaemon Test-Path -Times 4 -ParameterFilter {
+                $Path -match 'bin'
+            }
+            Assert-MockCalled -Module Cackledaemon Test-Path -Times 4 -ParameterFilter {
+                $Path -match '^HKLM'
+            }
+            Assert-MockCalled -Module Cackledaemon New-Item -Times 3
+            Assert-MockCalled -Module Cackledaemon Set-Item -Times 1
             Assert-MockCalled -Module Cackledaemon Set-ItemProperty -Times 4
         }
     }
 
     Context "when Emacs isn't installed" {
         It "doesn't set any registry keys" {
+            Mock -Module Cackledaemon Test-Path {}
+            Mock -Module Cackledaemon New-Item {}
             Mock -Module Cackledaemon Set-Item {}
             Mock -Module Cackledaemon Set-ItemProperty {}
 
             Set-EmacsAppPathRegistryKeys 2> $null
 
+            Assert-MockCalled -Module Cackledaemon Test-Path -Times 0 -ParameterFilter {
+                $Path -match '^HKLM'
+            }
+            Assert-MockCalled -Module Cackledaemon New-Item -Times 0
             Assert-MockCalled -Module Cackledaemon Set-Item -Times 0
             Assert-MockCalled -Module Cackledaemon Set-ItemProperty -Times 0
 
@@ -2490,6 +2515,9 @@ function Install-Emacs {
 
     Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -Completed
 
+    #TODO: TESTING
+    $ShouldInstall = $True
+
     if (-not $ShouldInstall) {
         Write-Progress -Id 1 -Activity 'Installing Emacs' -Completed
         Write-LogHost 'Emacs is currently installed and at the latest available version.'
@@ -2519,7 +2547,7 @@ function Install-Emacs {
         Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Executing Administrator commands...' -PercentComplete 60
         Write-LogHost "Executing Administrator commands..."
 
-        Start-Process -Wait powershell.exe -Verb RunAs -ArgumentList '-Command', "& {
+        $AdminProcess = Start-Process -Wait powershell.exe -Verb RunAs -ArgumentList '-NoExit', '-Command', "& {
             `$ErrorActionPreference = 'Stop'
             Import-Module Cackledaemon
 
@@ -2541,8 +2569,14 @@ function Install-Emacs {
             Write-Progress -Activity 'Installing Emacs' -Completed
         }"
 
-        Write-Progress -Id 1 -Activity 'Installing Emacs' -Completed
-        Write-LogHost "Emacs $TargetVersion is installed and ready to rock!"
+        if ($AdminProcess.ExitCode) {
+            Write-Progress -Id 1 -Activity 'Installing Emacs' -Completed
+            $ExitCode = $AdminProcess.ExitCode
+            Write-LogHost "Administrator commands failed with exit code $ExitCode. Check $CackledaemonLogFile for details."
+        } else {
+            Write-Progress -Id 1 -Activity 'Installing Emacs' -Completed
+            Write-LogHost "Emacs $TargetVersion is installed and ready to rock!"
+        }
     }
 }
 
@@ -3302,6 +3336,7 @@ Export-ModuleMember `
       'Get-Workspace',
       'Install-Emacs',
       'Install-EmacsUserEnvironment',
+      'Install-FileTypeAssociations',
       'Install-Shortcuts',
       'Invoke-Applet',
       'Invoke-LogRotate',
@@ -3397,6 +3432,7 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
         'Get-Workspace',
         'Install-Emacs',
         'Install-EmacsUserEnvironment',
+        'Install-FileTypeAssociations',
         'Install-Shortcuts',
         'Invoke-Applet',
         'Invoke-LogRotate',
