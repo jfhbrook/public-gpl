@@ -1891,7 +1891,7 @@ function Set-EmacsPathEnvVariable {
 
     $Path = Join-Path $EmacsInstallLocation 'bin'
 
-    $ExistingEmacs = Get-Command 'emacs.exe' -SilentlyContinue
+    $ExistingEmacs = Get-Command 'emacs.exe' -ErrorAction SilentlyContinue
 
     if ($ExistingEmacs) {
         $ExistingEmacsBinDir = Split-Path $ExistingEmacs.Source -Parent
