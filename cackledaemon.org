@@ -2440,6 +2440,10 @@ function Install-FileTypeAssociations {
 Windows doesn't really have an analog to sudo for PowerShell, but we still have
 a need to run commands with elevated privileges.
 
+For this, we use [[https://github.com/jfhbrook/PSeudo][PSeudo]], a module that I maintain for this purpose. Development
+is ongoing and I'm currently going through some gnar licensing issues, but in
+the meantime these are some notes from a prior version:
+
 The [[https://knowyourmeme.com/memes/galaxy-brain][tiny brain]] version of this is to simply run ~Start-Process~ with the ~-Verb
 RunAs~ flag turned on and the desired code to be executed inside of a string.
 This works and is relatively safe. However, any IO that happens in that process
@@ -2474,119 +2478,53 @@ TL;DR: This procedure evaluates string inputs at elevated privilege levels with
 the added ability of being able to brick the host process, so it's imperative
 that any script authors ensure that strings passed to this function are sound
 and not vulnerable to injections or error explosions.
+** Ensuring that Emacs is Closed
+The Windows OS will absolutely refuse to move or delete a file that is currently
+open in another process, and that includes running executables, such as
+~emacs.exe~ and ~emacsclientw.exe~. This means that if we want Cackledeamon's
+update process to be user-friendly that it has to guide the user through this
+process instead of hard crashing.
+
+*** Finding open Emacs processes
+We can use [[https://docs.microsoft.com/en-us/powershell/module/cimcmdlets/get-ciminstance?view=powershell-7][CIM]] to find processes that correspond to executables we're checking
+for. We do this by using a LIKE query to find all processes that have a file
+inside the configured Emacs install location.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-function Invoke-AsAdministrator {
+function Get-OpenEmacsProcesses {
+    . $CackledaemonConfigLocation
+    
+    # This escape isn't thoroughly researched and may be brittle
+    $EmacsSearchQuery = "${EmacsInstallLocation}%" -replace '\\', '\\'
+
+    return Get-CimInstance -Query "
+        SELECT
+          *
+        FROM Win32_Process WHERE ExecutablePath LIKE '${EmacsSearchQuery}'
+        " | ForEach-Object { Get-Process -Id $_.ProcessId }
+}
+#+END_SRC
+
+*** Blocking Until They're Closed
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Wait-ForEmacsProcessExit {
+    [CmdletBinding()]
     param(
-        [string]$Command,
-        [int]$IOInterval=1,  # 1 second
+        [int]$PollingInterval = 1  # 1 Second
     )
 
-    $ErrorActionPreference = 'Stop'
+    $OpenProcesses = Get-OpenEmacsProcesses
 
-    $PipeName = ("PSeudoPipe_" + (New-Guid))
+    while ($OpenProcesses) {
+        Write-LogInformation "The following Emacs processes are open:"
 
-    $Server = New-Object System.IO.Pipes.NamedPipeServerStream $PipeName, 'In'
+        $OpenProcesses | Write-LogInformation
 
-    $Process = Start-Process `
-        -PassThru `
-        -Verb RunAs `
-        powershell.exe -ArgumentList '-WindowStyle', 'hidden', '-Command', "& {
-            `$NamedPipeClient = New-Object System.IO.Pipes.NamedPipeClientStream '.', '$PipeName', 'Out'
-            `$NamedPipeClient.Connect()
-            `$NamedPipeWriter = New-Object System.IO.StreamWriter `$NamedPipeClient
-            `$NamedPipeWriter.AutoFlush = `$True
+        Write-LogInformation "Please close these processes to continue."
 
-            function Send-Host {
-                param(
-                    [string]`$Message
-                )
-
-                `$NamedPipeWriter.WriteLine('HOST:' + `$Message)
-            }
-
-            function Send-Error {
-                param(
-                    [string]`$Message
-                )
-
-                `$NamedPipeWriter.WriteLine('ERROR:' + `$Message)
-            }
-
-            function Send-Exit {
-                param(
-                    [int]`$Code
-                )
-
-                `$NamedPipeWriter.WriteLine('EXIT:' + `$Code)
-                `$NamedPipeClient.Dispose()
-            }
-
-            Set-Alias -Name Write-Host -Value Send-Host
-            Set-Alias -Name Write-Error -Value Send-Error
-            Set-Alias -Name Exit -Value Send-Exit
-
-            `$Error = `$null
-            try {
-                Invoke-Expression '$Command'
-            } catch {
-                `$Error = `$_
-            } finally {
-                if (`$Error) {
-                    Send-Error `$Error
-                    Send-Exit 1
-                } else {
-                    Send-Exit 0
-                }
-            }
-    }"
-
-    # We give the process a chance to not immediately hard crash, in the hopes
-    # that we don't cause a lock by waiting for a connection we never receive
-
-    Start-Sleep -Seconds $IOInterval
-
-    if ($Process.HasExited) {
-        $Server.Dispose()
-        return
+        Start-Sleep -Seconds $PollingInterval
     }
-
-
-    # Here goes nothin'
-    $Server.WaitForConnection()
-
-    $Reader = New-Object System.IO.StreamReader $Server
-
-    while ($True) {
-        $IOStart = Get-Date
-
-        $Line = $Reader.ReadLine()
-
-        while ($Line) {
-            if ($Line.StartsWith('HOST:')) {
-                $Line -replace '^HOST\:', '' | Write-Host
-            } elseif ($Line.StartsWith('ERROR:')) {
-                $Line -replace '^ERROR\:', '' | Write-Error
-            } elseif ($Line.StartsWith('EXIT:')) {
-                $Line -replace '^EXIT\:', '' | ForEach-Object {
-                    Write-Verbose "Administrator shell exited with code $_."
-                }
-            } else {
-                $Line | Write-Warning
-            }
-            $Line = $Reader.ReadLine()
-        }
-
-        if ($Process.HasExited) {
-            break
-        }
-
-        Start-Sleep -Seconds ($args[0] - ((Get-Date) - $IOStart).TotalSeconds)
-    }
-
-    $Server.Dispose()
 }
-
 #+END_SRC
 ** Putting It All Together
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
@@ -2689,7 +2627,7 @@ function Install-Emacs {
             $Install = $Workspace.GetInstall($TargetVersion)
         } else {
             if ($Workspace.TestArchive($TargetVersion)) {
-                Write-LogVerbose "Eamcs has already been downloaded (but not unpacked) for version $TargetVersion"
+                Write-LogVerbose "Emacs has already been downloaded (but not unpacked) for version $TargetVersion"
 
                 $Archive = $Workspace.GetArchive($TargetVersion);
             } else {
@@ -2711,16 +2649,10 @@ function Install-Emacs {
 
         $ModulePath = (Get-Module Cackledaemon).Path
 
-        Invoke-AsAdministrator {
+        Invoke-AsAdmin {
             Import-Module '$ModulePath'
-
-            Write-Host 'Moving files to $EmacsInstallLocation...'
             Update-EmacsInstall -Path $Install
-
-            Write-Host 'Setting App Path registry keys...'
             Set-EmacsAppPathRegistryKeys
-
-            Write-Host 'Setting file type associations...'
             Install-FileTypeAssociations
         }
 
@@ -2951,7 +2883,7 @@ the edge case of searching for emacs instances *not* started with the ~--daemon~
 but which have called =(run-server)=.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-function Get-UnmanagedEmacsDaemon () {
+function Get-UnmanagedEmacsDaemon {
     $ManagedProcess = Get-ProcessFromPidFile
     return Get-CimInstance -Query "
         SELECT
@@ -3485,6 +3417,7 @@ Export-ModuleMember `
       'Get-EmacsExeVersion',
       'Get-FileTypeAssociationsConfig',
       'Get-LatestEmacsDownload',
+      'Get-OpenEmacsProcesses',
       'Get-ProcessFromPidFile',
       'Get-ShortcutsConfig',
       'Get-StartMenuItems',
@@ -3568,7 +3501,7 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
     # ScriptsToProcess = @()
 
     # Modules to import as nested modules of the module specified in RootModule/ModuleToProcess
-    # NestedModules = @()
+    NestedModules = @('PSeudo.psm1')
 
     FunctionsToExport = @(
         'Clear-ServerFileDirectory',
@@ -3633,6 +3566,7 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
     FileList = @(
         'Cackledaemon.psm1',
         'Cackledaemon.psd1',
+        'PSeudo.psm1',
         'Configuration.ps1',
         'COPYING',
         'FileTypeAssociations.csv',
@@ -3668,8 +3602,18 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
 Cackledaemon can be built and published using [[https://github.com/nightroman/Invoke-Build][Invoke-Build]].
 
 #+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
-task . Clean, Build, Test
+task . Clean, DownloadDependencies, Build, Test
 
+#+END_SRC
+** Downloading Vendored Dependencies
+In order to make Cackledaemon easier to install while also modularizing things a
+little bit, we download some (a) vendored dependency.
+#+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
+task DownloadDependencies {
+    Invoke-WebRequest `
+      'https://raw.githubusercontent.com/jfhbrook/PSeudo/master/PSeudo/PSeudo.psm1' `
+      -OutFile '.\Cackledaemon\Pseudo.psm1'
+}
 #+END_SRC
 ** Building Cackledaemon
 =Invoke-Build= will call Emacs in batch mode to build this project using
