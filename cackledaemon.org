@@ -373,7 +373,8 @@ function Initialize-TestEnvironment {
     New-Item -Type Directory $Env:UserProfile
 
     Remove-Module Cackledaemon -ErrorAction 'SilentlyContinue'
-    Import-Module .\Cackledaemon\Cackledaemon.psd1
+    Import-Module PSeudo
+    Import-Module .\Cackledaemon\Cackledaemon.psm1
 
     $Global:CackledaemonWD = "$TestDrive\Cackledaemon"
     $Global:CackledaemonConfigLocation = "$TestDrive\Cackledaemon\Configuration.ps1"
@@ -679,7 +680,7 @@ function Enable-Job {
     $Job = Get-Job -Name $Name -ErrorAction SilentlyContinue
 
     if ($Job) {
-        Write-LogWarning ('{0} job already exists. Trying to stop and remove...' -f $Name)
+        Write-CDWarning ('{0} job already exists. Trying to stop and remove...' -f $Name)
             Disable-Job -Name $Job.Name -ErrorAction Stop
 
     }
@@ -765,7 +766,7 @@ function Disable-Job {
     $Job = Get-Job -Name $Name -ErrorAction SilentlyContinue
 
     if (-not $Job) {
-        Write-LogWarning ("{0} job doesn't exist. Doing nothing." -f $Name)
+        Write-CDWarning ("{0} job doesn't exist. Doing nothing." -f $Name)
         return
     }
 
@@ -773,13 +774,7 @@ function Disable-Job {
         Stop-Job -Name $Name -ErrorAction Stop
         Remove-Job -Name $Name -ErrorAction Stop
     } catch {
-        Write-LogError -Message ('Failed to stop and remove {0} job.' -f $Name) `
-            -Exception $_.Exception `
-            -Category $_.CategoryInfo.Category `
-            -CategoryActivity $_.CategoryInfo.Activity `
-            -CategoryReason $_.CategoryInfo.Reason `
-            -CategoryTargetName $_.CategoryInfo.TargetName `
-            -CategoryTargetType $_.CategoryInfo.TargetType
+        Write-CDError $_
     }
 }
 
@@ -827,143 +822,133 @@ Describe "Disable-Job" {
 * Logging
 ** Logger
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-function Write-Log {
+function New-CDLogRecord {
+    [CmdletBinding()]
     param(
-        [Parameter(Position=0)]
-        [string]$Message,
-        [string]$Level = 'Verbose',
-        [Exception]$Exception,
-        [System.Management.Automation.ErrorCategory]$Category = 'NotSpecified',
-        [string]$CategoryActivity,
-        [string]$CategoryReason,
-        [string]$CategoryTargetName,
-        [string]$CategoryTargetType
+        [string]$Level = 'Info',
+        [object]$MessageData,
+        [string[]]$Tags = @()
     )
 
-    Try {
-        . $CackledaemonConfigLocation
-    } Catch {
-        Write-Warning 'Unable to load configuration! Unable to write to log file.'
-    }
-
-    if (-not @('Debug', 'Verbose', 'Information', 'Host', 'Warning', 'Error').Contains($Level)) {
-        Write-LogWarning ('Write-Log called with unrecognized level {0}' -f $Level)
+    if (-not @('Debug','Info','Warning','Error','Fatal').Contains($Level)) {
+        Write-Warning "New-CDLogRecord called with unrecognized level $Level"
         $Level = 'Warning'
     }
 
-    if ($Level -eq 'Error' -and $Exception) {
-        $Message = ('{0} (Exception: {1})' -f $Message, $Exception)
+    Write-Information -MessageData $MessageData -Tags (@($Level) + $Tags) 6>&1
+}
+
+function Write-CDLog {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
+        [System.Management.Automation.InformationRecord]$InformationRecord
+    )
+
+    try {
+        . $CackledaemonConfigLocation
+    } catch {
+        Write-Warning 'Unable to load Cackledaemon configuration! Unable to write to log file.'
+        return
     }
 
-    $Line = ('[{0}] {1}: {2}' -f (Get-Date -Format o), $Level, $Message)
+    $Timestamp = (Get-Date -Date $InformationRecord.TimeGenerated -Format o)
 
-    if ($CackledaemonLogFile) {
-        Add-Content $CackledaemonLogFile -Value $Line
-    }
-
-    if ($Level -eq 'Debug') {
-        Write-Debug $Message
-    } elseif ($Level -eq 'Verbose') {
-        Write-Verbose $Message
-    } elseif ($Level -eq 'Information') {
-        Write-Information $Message
-    } elseif ($Level -eq 'Host') {
-        Write-Host $Message
-    } elseif ($Level -eq 'Warning') {
-        Write-Warning $Message
-    } elseif ($Level -eq 'Error') {
-        if ($Exception) {
-            Write-Error -Message $Message `
-              -Exception $Exception `
-              -Category $Category `
-              -CategoryActivity $CategoryActivity `
-              -CategoryReason $CategoryReason `
-              -CategoryTargetName $CategoryTargetName `
-              -CategoryTargetType $CategoryTargetType
-        } else {
-            Write-Error -Message $Message `
-              -Category $Category `
-              -CategoryActivity $CategoryActivity `
-              -CategoryReason $CategoryReason `
-              -CategoryTargetName $CategoryTargetName `
-              -CategoryTargetType $CategoryTargetType
+    $InformationRecord.MessageData | Out-String | ForEach-Object {
+        if ($_) {
+            $Line = '{0} [{1}] {2}' -f $Timestamp,($InformationRecord.Tags -join ':'),$_
+            Add-Content $CackledaemonLogFile -Value $Line
         }
     }
 }
 
-function Write-LogDebug {
-    [Parameter(Position=0)]
-    param([string]$Message)
-
-    Write-Log $Message -Level Debug
-}
-
-function Write-LogInformation {
-    [Parameter(Position=0)]
-    param([string]$Message)
-
-    Write-Log $Message -Level Information
-}
-
-function Write-LogHost {
-    [Parameter(Position=0)]
-    param([string]$Message)
-
-    Write-Log $Message -Level Host
-}
-
-function Write-LogVerbose {
-    [Parameter(Position=0)]
-    param([string]$Message)
-
-    Write-Log $Message -Level Verbose
-}
-
-function Write-LogWarning {
-    [Parameter(Position=0)]
-    param([string]$Message)
-
-    Write-Log $Message -Level Warning
-}
-
-function Write-LogError {
+function Write-CDDebug {
+    [CmdletBinding()]
     param(
-        [Parameter(Position=0)]
+        [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
         [string]$Message,
-        [Exception]$Exception,
-        [System.Management.Automation.ErrorCategory]$Category = 'NotSpecified',
-        [string]$CategoryActivity,
-        [string]$CategoryReason,
-        [string]$CategoryTargetName,
-        [string]$CategoryTargetType
+        [string[]]$Tags = @()
     )
 
-    if ($Exception) {
-        Write-Log -Level Error `
-          -Message $Message `
-          -Exception $Exception `
-          -Category $Category `
-          -CategoryActivity $CategoryActivity `
-          -CategoryReason $CategoryReason `
-          -CategoryTargetName $CategoryTargetName `
-          -CategoryTargetType $CategoryTargetType
-    } else {
-        Write-Log -Level Error `
-          -Message $Message `
-          -Category $Category `
-          -CategoryActivity $CategoryActivity `
-          -CategoryReason $CategoryReason `
-          -CategoryTargetName $CategoryTargetName `
-          -CategoryTargetType $CategoryTargetType
-    }
+    New-CDLogRecord 'Debug' $Message $Tags | Write-CDLog
+    Write-Debug $Message
+}
+
+function Write-CDInfo {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
+        [object]$MessageData,
+        [string[]]$Tags = @()
+    )
+
+    New-CDLogRecord 'Info' $MessageData $Tags | Write-CDLog
+    Write-Information $MessageData $Tags
+}
+
+function Write-CDWarning {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
+        [string]$Message,
+        [string[]]$Tags = @()
+    )
+    New-CDLogRecord 'Warning' $Message $Tags | Write-CDLog
+    Write-Warning $Message
+}
+
+function Write-CDError {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
+        [System.Management.Automation.ErrorRecord]$ErrorRecord,
+        [string[]]$Tags = @()
+    )
+
+    New-CDLogRecord 'Error' $ErrorRecord $Tags | Write-CDLog
+    $PSCmdlet.WriteError($ErrorRecord)
+}
+
+function Write-CDFatal {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
+        [System.Management.Automation.ErrorRecord]$ErrorRecord,
+        [string[]]$Tags = @()
+    )
+    New-CDLogRecord 'Fatal' $ErrorRecord $Tags | Write-CDLog
+    $PSCmdlet.ThrowTerminatingError($ErrorRecord)
 }
 
 #+END_SRC
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
-$TimestampRegexp = '\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{7}-\d{2}:\d{2}\]'
+$TimestampRegexp = '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{7}-\d{2}:\d{2}'
 
-Describe 'Write-Log' {
+Describe 'New-CDLogRecord' {
+    BeforeEach {
+        Initialize-TestEnvironment
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    Context 'when called with an unrecognized level' {
+        It 'warns and then returns a message at the warning level' {
+            $Record = New-CDLogRecord -Level 'InvalidLevel' -MessageData 'Test Message' -WarningVariable Warnings 3> $null
+
+            $Record.Tags | Should -HaveCount 1
+            $Record.Tags[0] | Should -Be 'Warning'
+
+            $Warnings | Should -Not -Be $null
+            $Warnings.Count | Should -Be 1
+
+            $Warnings[0].ToString() | Should -Be 'New-CDLogRecord called with unrecognized level InvalidLevel'
+        }
+    }
+}
+Describe 'Write-CDLog' {
     BeforeEach {
         Initialize-TestEnvironment
     }
@@ -976,34 +961,19 @@ Describe 'Write-Log' {
         It 'warns and does nothing' {
             Remove-Item $CackledaemonConfigLocation
 
-            Write-Log -Message "test log" -WarningVariable Warnings 3> $null
+            New-CDLogRecord -Message 'test log' | Write-CDLog -WarningVariable Warnings 3> $null
 
-            'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -Not -Exist
+            'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Not -Exist
 
             $Warnings | Should -Not -Be $null
             $Warnings.Count | Should -Be 1
-            $Warnings[0].ToString() | Should -Be 'Unable to load configuration! Unable to write to log file.'
-        }
-    }
-
-    Context 'when called with an unrecognized level' {
-        It 'warns and then logs at the warning level' {
-            Write-Log -Level 'InvalidLevel' -Message 'Test Message' -WarningVariable Warnings 3> $null
-
-            'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -FileContentMatch "^$TimestampRegexp Warning: Write-Log called with unrecognized level InvalidLevel$"
-            'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -FileContentMatch "^$TimestampRegexp Warning: Test Message$"
-
-            $Warnings | Should -Not -Be $null
-            $Warnings.Count | Should -Be 2
-
-            $Warnings[0].ToString() | Should -Be 'Write-Log called with unrecognized level InvalidLevel'
-            $Warnings[1].ToString() | Should -Be 'Test Message'
+            $Warnings[0].ToString() | Should -Be 'Unable to load Cackledaemon configuration! Unable to write to log file.'
         }
     }
 }
 
-@('Debug', 'Verbose', 'Information', 'Host', 'Warning') | ForEach-Object {
-    Describe ('Write-Log{0}' -f $_) {
+@('Debug', 'Info', 'Warning') | ForEach-Object {
+    Describe ('Write-CD{0}' -f $_) {
         BeforeEach {
             Initialize-TestEnvironment
         }
@@ -1013,16 +983,14 @@ Describe 'Write-Log' {
         }
 
         It ('logs at the {0} level' -f $_) {
-            Mock -Module Cackledaemon Write-Host {}
-           
-            Invoke-Expression "Write-Log${_} 'Test message'" 3> $null
+            Invoke-Expression "Write-CD${_} 'Test message'" 3> $null
 
-            "$TestDrive/Cackledaemon/Cackledaemon.log" | Should -FileContentMatch "^$TimestampRegexp ${_}: Test message$"
+            "$TestDrive\Cackledaemon\Cackledaemon.log" | Should -FileContentMatch "^$TimestampRegexp \[${_}\] Test message$"
         }
     }
 }
 
-Describe 'Write-LogError' {
+Describe 'Write-CDError' {
     BeforeEach {
         Initialize-TestEnvironment
     }
@@ -1031,52 +999,42 @@ Describe 'Write-LogError' {
         Restore-StandardEnvironment
     }
 
-    Context 'when called with an exception type' {
-        It 'logs an error' {
-            $Exception = New-Object Exception 'Test exception'
+    It 'logs at the Error level' {
+        $Exception = New-Object Exception 'Test exception'
+        $ErrorRecord = New-Object System.Management.Automation.ErrorRecord $Exception,'testErrorId','InvalidOperation',$null
 
-            Write-LogError `
-              'Test message' `
-              -Exception (New-Object Exception 'Test exception') `
-              -Category 'InvalidOperation' `
-              -CategoryActivity 'Logging with an exception' `
-              -CategoryReason 'Testing' `
-              -CategoryTargetName 'SomeTarget' `
-              -CategoryTargetType 'SomeTargetType' 2> $null
+        Write-CDError $ErrorRecord 2> $null
 
-            $Error[0].ToString() | Should -Be 'Test message (Exception: System.Exception: Test exception)'
-            $Error[0].CategoryInfo.Category.ToString() | Should -Be 'InvalidOperation'
-            $Error[0].CategoryInfo.Reason | Should -Be 'Testing'
-            $Error[0].CategoryInfo.TargetName | Should -Be 'SomeTarget'
-            $Error[0].CategoryInfo.TargetType | Should -Be 'SomeTargetType'
+        $Error[0].ToString() | Should -Be 'Test exception'
+        $Error[0].CategoryInfo.Category.ToString() | Should -Be 'InvalidOperation'
 
-            'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -Exist
-            'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -FileContentMatch "^$TimestampRegexp Error: Test message \(Exception: System.Exception: Test exception\)$"
-        }
-    }
-
-    Context 'when called without an exception type' {
-        It 'logs an error' {
-            Write-LogError `
-              'Test message' `
-              -Category 'InvalidOperation' `
-              -CategoryActivity 'Logging without an exception' `
-              -CategoryReason 'Testing' `
-              -CategoryTargetName 'SomeTarget' `
-              -CategoryTargetType 'SomeTargetType' 2> $null
-
-            $Error[0].Exception | Should -Not -Be $null
-            $Error[0].CategoryInfo.Category.ToString() | Should -Be 'InvalidOperation'
-            $Error[0].CategoryInfo.Reason | Should -Be 'Testing'
-            $Error[0].CategoryInfo.TargetName | Should -Be 'SomeTarget'
-            $Error[0].CategoryInfo.TargetType | Should -Be 'SomeTargetType'
-
-            'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -Exist
-            'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -FileContentMatch "^$TimestampRegexp Error: Test Message$"
-        }
+        'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -Exist
+        'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -FileContentMatch "^$TimestampRegexp \[Error\] Test exception$"
     }
 }
 
+Describe 'Write-CDFatal' {
+    BeforeEach {
+        Initialize-TestEnvironment
+    }
+
+    AfterEach {
+        Restore-StandardEnvironment
+    }
+
+    It 'logs at the Fatal level and throws an Exception' {
+        $Exception = New-Object Exception 'Test exception'
+        $ErrorRecord = New-Object System.Management.Automation.ErrorRecord $Exception,'testErrorId','InvalidOperation',$null
+
+        { Write-CDFatal $ErrorRecord } | Should -Throw Exception
+
+        $Error[0].ToString() | Should -Be 'Test exception'
+        $Error[0].CategoryInfo.Category.ToString() | Should -Be 'InvalidOperation'
+
+        'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -Exist
+        'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -FileContentMatch "^$TimestampRegexp \[Fatal\] Test exception$"
+    }
+}
 
 #+END_SRC
 ** Log Rotation
@@ -1095,7 +1053,7 @@ function Invoke-LogRotate {
         $LogFile = $_
 
         if ((Test-Path $LogFile) -and (Get-Item $LogFile).Length -ge $LogSize) {
-            Write-LogVerbose ('Rotating {0}...' -f $LogFile)
+            Write-CDInfo ('Rotating {0}...' -f $LogFile)
 
             ($LogRotate..0) | ForEach-Object {
                 $Current = $(if ($_) {
@@ -1105,25 +1063,25 @@ function Invoke-LogRotate {
                 $Next = '{0}.{1}' -f $LogFile, ($_ + 1)
 
                 if (Test-Path $Current) {
-                    Write-LogVerbose ('Copying {0} to {1}...' -f $Current, $Next)
+                    Write-CDInfo ('Copying {0} to {1}...' -f $Current, $Next)
 
                     Copy-Item -Path $Current -Destination $Next
                 }
             }
 
-            Write-LogVerbose ('Truncating {0}...' -f $LogFile)
+            Write-CDInfo ('Truncating {0}...' -f $LogFile)
 
             Clear-Content $LogFile
 
             $StaleLogFile = '{0}.{1}' -f $LogFile, ($LogRotate + 1)
 
             if (Test-Path $StaleLogFile) {
-                Write-LogVerbose ('Removing {0}...' -f $StaleLogFile)
+                Write-CDInfo ('Removing {0}...' -f $StaleLogFile)
 
                 Remove-Item $StaleLogFile
             }
 
-            Write-LogVerbose 'Done.'
+            Write-CDInfo 'Done.'
         }
     }
 }
@@ -1144,7 +1102,7 @@ Describe 'Invoke-LogRotate' {
         Add-Content 'TestDrive:\Cackledaemon\Configuration.ps1' '$LogSize = 1'
         Add-Content 'TestDrive:\Cackledaemon\Configuration.ps1' '$LogRotate = 2'
 
-        Write-LogVerbose 'Testing 1'
+        Write-CDInfo 'Testing 1'
 
         'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Exist
         'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -FileContentMatch 'Testing 1'
@@ -1159,7 +1117,7 @@ Describe 'Invoke-LogRotate' {
         'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -Exist
         'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -FileContentMatch 'Testing 1'
 
-        Write-LogVerbose 'Testing 2'
+        Write-CDInfo 'Testing 2'
         Invoke-LogRotate
 
         'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Exist
@@ -1169,7 +1127,7 @@ Describe 'Invoke-LogRotate' {
         'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -Exist
         'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -FileContentMatch 'Testing 1'
 
-        Write-LogVerbose 'Testing 3'
+        Write-CDInfo 'Testing 3'
         Invoke-LogRotate
 
         'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Exist
@@ -1196,7 +1154,7 @@ function Enable-LogRotateJob {
 
         while ($True) {
             Invoke-LogRotate
-            Write-LogDebug ('LogRotateJob sleeping for {0} seconds.' -f $LogCheckTime)
+            Write-CDDebug ('LogRotateJob sleeping for {0} seconds.' -f $LogCheckTime)
             Start-Sleep -Seconds $LogCheckTime
         }
     }
@@ -2101,12 +2059,9 @@ function Set-EmacsAppPathRegistryKeys {
             }
             Set-ItemProperty -Path $RegistryPath -Name Path -Value $Path
         } else {
-            Write-Error -Message ("{0} doesn't exist - refusing to write this to the registry." -f $BinPath) `
-              -Category ObjectNotFound `
-              -CategoryActivity 'Set-EmacsAppPathRegistryKeys' `
-              -CategoryReason 'ItemNotFoundException'`
-              -CategoryTargetName $BinPath `
-              -CategoryTargetType 'string'
+            $Exception = New-Object Exception ("{0} doesn't exist - refusing to write this to the registry." -f $BinPath)
+            $ErrorRecord = New-Object System.Management.Automation.ErrorRecord $Exception,'ItemNotFoundException','ObjectNotFound',$BinPath
+            Write-CDError $ErrorRecord
         }
 
     }
@@ -2516,11 +2471,11 @@ function Wait-ForEmacsProcessExit {
     $OpenProcesses = Get-OpenEmacsProcesses
 
     while ($OpenProcesses) {
-        Write-LogInformation "The following Emacs processes are open:"
+        Write-CDInfo "The following Emacs processes are open:"
 
-        $OpenProcesses | Write-LogInformation
+        $OpenProcesses | Write-CDInfo
 
-        Write-LogInformation "Please close these processes to continue."
+        Write-CDInfo "Please close these processes to continue."
 
         Start-Sleep -Seconds $PollingInterval
     }
@@ -2532,17 +2487,17 @@ function Install-EmacsUserEnvironment {
     $ErrorActionPreference = 'Stop'
 
     Write-Progress -Id 3 -Activity 'Setting up the Emacs user environment' -CurrentOperation "Updating the user's `$Path variable..." -PercentComplete 0
-    Write-LogHost "Updating the user's `$Path variable..."
+    Write-CDInfo "Updating the user's `$Path variable..."
 
     Set-EmacsPathEnvVariable
 
     Write-Progress -Id 3 -Activity 'Setting up the Emacs user environment' -CurrentOperation "Setting the user's `$HOME variable..." -PercentComplete 33
-    Write-LogHost "Setting the user's `$HOME variable..."
+    Write-CDInfo "Setting the user's `$HOME variable..."
 
     Set-HomeEnvVariable
 
     Write-Progress -Id 3 -Activity 'Setting up the Emacs user environment' -CurrentOperation "Installing shortcuts..." -PercentComplete 67
-    Write-LogHost "Installing shortcuts..."
+    Write-CDInfo "Installing shortcuts..."
 
     Install-Shortcuts
 
@@ -2560,7 +2515,7 @@ function Install-Emacs {
     $ErrorActionPreference = 'Stop'
 
     Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Loading Cackledaemon configuration...' -PercentComplete 0
-    Write-LogVerbose 'Loading Cackledaemon configuration...'
+    Write-CDInfo 'Loading Cackledaemon configuration...'
 
     . $CackledaemonConfigLocation
 
@@ -2568,24 +2523,24 @@ function Install-Emacs {
         $Workspace = Get-Workspace
     } else {
         Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Creating workspace...' -PercentComplete 14
-        Write-LogVerbose 'Creating new workspace...'
+        Write-CDInfo 'Creating new workspace...'
 
         $Workspace = New-Workspace
     }
 
     Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking the Emacs website for the latest available download...' -PercentComplete 29
-    Write-LogHost 'Checking the Emacs website for the latest available download...'
+    Write-CDInfo 'Checking the Emacs website for the latest available download...'
 
     $LatestDownload = Get-LatestEmacsDownload
 
-    Write-LogVerbose ('Version {0} is the latest version of Emacs available for install' -f $LatestDownload.Version)
+    Write-CDInfo ('Version {0} is the latest version of Emacs available for install' -f $LatestDownload.Version)
 
     $ShouldInstall = $False
 
     Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking if Emacs needs to be installed or updated...' -PercentComplete 43
 
     if ($Force) {
-        Write-LogVerbose "`$Force flag was enabled so installing Emacs regardless of what's installed"
+        Write-CDInfo "`$Force flag was enabled so installing Emacs regardless of what's installed"
 
         $ShouldInstall = $True
     } else {
@@ -2596,18 +2551,18 @@ function Install-Emacs {
 
             $InstalledVersion = Get-EmacsExeVersion
 
-            Write-LogVerbose ('Version {0} of Emacs is installed' -f $InstalledVersion)
+            Write-CDInfo ('Version {0} of Emacs is installed' -f $InstalledVersion)
 
             Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -CurrentOperation 'Comparing versions...' -PercentComplete 57
 
             if ($LatestDownload.Version -gt $InstalledVersion) {
-                Write-LogVerbose ('Upstream Emacs version {0} is newer than installed Emacs version {1}' -f $LatestDownload.Version, $InstalledVersion)
+                Write-CDInfo ('Upstream Emacs version {0} is newer than installed Emacs version {1}' -f $LatestDownload.Version, $InstalledVersion)
                 $ShouldInstall = $True
             } else {
-                Write-LogVerbose ('Upstream Emacs version {0} is no newer than installed Emacs version {1}' -f $LatestDownload.Version, $InstalledVersion)
+                Write-CDInfo ('Upstream Emacs version {0} is no newer than installed Emacs version {1}' -f $LatestDownload.Version, $InstalledVersion)
             }
         } else {
-            Write-LogVerbose 'No version of Emacs is installed'
+            Write-CDInfo 'No version of Emacs is installed'
             $ShouldInstall = $True
         }
 
@@ -2617,39 +2572,40 @@ function Install-Emacs {
 
     if (-not $ShouldInstall) {
         Write-Progress -Id 1 -Activity 'Installing Emacs' -Completed
-        Write-LogHost 'Emacs is currently installed and at the latest available version.'
+        Write-CDInfo 'Emacs is currently installed and at the latest available version.'
     } else {
         $TargetVersion = $LatestDownload.Version
 
         if ($Workspace.TestInstall($TargetVersion)) {
-            Write-LogVerbose "Emacs has already been downloaded and unpacked for version $TargetVersion"
+            Write-CDInfo "Emacs has already been downloaded and unpacked for version $TargetVersion"
 
             $Install = $Workspace.GetInstall($TargetVersion)
         } else {
             if ($Workspace.TestArchive($TargetVersion)) {
-                Write-LogVerbose "Emacs has already been downloaded (but not unpacked) for version $TargetVersion"
+                Write-CDInfo "Emacs has already been downloaded (but not unpacked) for version $TargetVersion"
 
                 $Archive = $Workspace.GetArchive($TargetVersion);
             } else {
                 Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Downloading Emacs version $TargetVersion..." -PercentComplete 71
-                Write-LogHost "Downloading Emacs version $TargetVersion..."
+                Write-CDInfo "Downloading Emacs version $TargetVersion..."
 
                 $Archive = New-EmacsArchive $LatestDownload
             }
 
             Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Unpacking Emacs version $TargetVersion..." -PercentComplete 86
-            Write-LogHost "Unpacking Emacs version $TargetVersion..."
+            Write-CDInfo "Unpacking Emacs version $TargetVersion..."
 
             $Install = Export-EmacsArchive $Archive
         }
 
 
         Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Executing Administrator commands...' -PercentComplete 60
-        Write-LogHost "Executing Administrator commands..."
+        Write-CDInfo "Executing Administrator commands..."
 
         $ModulePath = (Get-Module Cackledaemon).Path
 
         Invoke-AsAdmin {
+            $InformationPreference = 'Continue'
             Import-Module '$ModulePath'
             Update-EmacsInstall -Path $Install
             Set-EmacsAppPathRegistryKeys
@@ -2662,10 +2618,10 @@ function Install-Emacs {
         if ($AdminProcess.ExitCode) {
             Write-Progress -Id 1 -Activity 'Installing Emacs' -Completed
             $ExitCode = $AdminProcess.ExitCode
-            Write-LogHost "Administrator commands failed with exit code $ExitCode. Check $CackledaemonLogFile for details."
+            Write-CDInfo "Administrator commands failed with exit code $ExitCode. Check $CackledaemonLogFile for details."
         } else {
             Write-Progress -Id 1 -Activity 'Installing Emacs' -Completed
-            Write-LogHost "Emacs $TargetVersion is installed and ready to rock!"
+            Write-CDInfo "Emacs $TargetVersion is installed and ready to rock!"
         }
     }
 }
@@ -2913,20 +2869,15 @@ function Start-EmacsDaemon {
     $Process = Get-ProcessFromPidFile
 
     if ($Process) {
-        Write-LogError `
-          -Message 'The Emacs daemon is already running and being managed.' `
-          -Category ResourceExists `
-          -CategoryActivity 'Start-EmacsDaemon' `
-          -CategoryReason ManagedResourceExistsException
-
+        $Exception = New-Object Exception 'The Emacs daemon is already running and being managed.'
+        $ErrorRecord = New-Object System.Management.Automation.ErrorRecord $Exception,'ManagedResourceExistsException','ResourceExists',$null
+        Write-CDError $ErrorRecord
     } elseif (Get-UnmanagedEmacsDaemon) {
-        Write-LogError `
-          -Message 'An unmanaged Emacs daemon is running.' `
-          -Category ResourceExists `
-          -CategoryActivity 'Start-EmacsDaemon' `
-          -CategoryReason UnmanagedResourceExistsException
+        $Exception = New-Object Exception 'An unmanaged Emacs daemon is running.'
+        $ErrorRecord = New-Object System.Management.Automation.ErrorRecord $Exception,'UnmanagedResourceExistsException','ResourceExists',$null
+        Write-CDError $ErrorRecord
     } else {
-        Write-LogVerbose 'Starting the Emacs daemon...'
+        Write-CDInfo 'Starting the Emacs daemon...'
 
         $Process = Start-Process `
           -FilePath 'emacs.exe' `
@@ -2939,11 +2890,11 @@ function Start-EmacsDaemon {
         Write-ProcessToPidFile $Process
 
         if ($Wait) {
-            Write-Verbose 'Waiting for Emacs daemon to exit...'
+            Write-CDDebug 'Waiting for Emacs daemon to exit...'
             $Process = Wait-Process -Id $Process.Id
         }
 
-        Write-Verbose 'Done.'
+        Write-CDInfo 'Done.'
 
         return $Process
     }
@@ -3089,19 +3040,17 @@ function Stop-EmacsDaemon {
     $Process = Get-ProcessFromPidFile
 
     if (-not $Process) {
-        Write-LogError `
-          -Message "A managed Emacs daemon isn't running and can not be stopped!" `
-          -Category ResourceUnavailable `
-          -CategoryActivity 'Stop-EmacsDaemon' `
-          -CategoryReason ManagedResourceUnavailableException
+        $Exception = New-Object Exception "A managed Emacs daemon isn't running and can not be stopped."
+        $ErrorRecord = New-Object System.Management.Automation.ErrorRecord $Exception,'UnmanagedResourceUnavailableException','ResourceUnavailable',$null
+        Write-CDError $ErrorRecord
     } else {
-        Write-LogVerbose 'Stopping the Emacs daemon...'
+        Write-CDInfo 'Stopping the Emacs daemon...'
 
         Stop-Process -InputObject $Process
 
         Write-ProcessToPidFile $null
 
-        Write-LogVerbose 'Done.'
+        Write-CDInfo 'Done.'
     }
 }
 
@@ -3143,7 +3092,7 @@ Describe 'Stop-EmacsDaemon' {
             Assert-MockCalled -Module Cackledaemon Stop-Process -Times 0
             Assert-MockCalled -Module Cackledaemon Write-ProcessToPidFile -Times 0
 
-            $Error[0].ToString() | Should -Be "A managed Emacs daemon isn't running and can not be stopped!"
+            $Error[0].ToString() | Should -Be "A managed Emacs daemon isn't running and can not be stopped."
         }
     }
 }
@@ -3158,7 +3107,7 @@ function Restart-EmacsDaemon {
     try {
         Stop-EmacsDaemon -ErrorAction Stop
     } catch {
-        Write-LogWarning 'Attempting to start the Emacs daemon even though stopping it failed'
+        Write-CDWarning 'Attempting to start the Emacs daemon even though stopping it failed'
     }
 
     Start-EmacsDaemon
@@ -3215,20 +3164,14 @@ function Invoke-Applet {
         try {
             Invoke-Command -ScriptBlock $ScriptBlock
         } catch {
-            Try {
+            try {
                 . $CackledaemonConfigLocation
-            } Catch {
+            } catch {
                 Write-Warning 'Unable to load configuration! Using default notify timeout.'
                 $NotifyTimeout = 5000
             }
 
-            Write-LogError -Message $_.Exception.Message `
-              -Exception $_.Exception `
-              -Category $_.CategoryInfo.Category `
-              -CategoryActivity $_.CategoryInfo.Activity `
-              -CategoryReason $_.CategoryInfo.Reason `
-              -CategoryTargetName $_.CategoryInfo.TargetName `
-              -CategoryTargetType $_.CategoryInfo.TargetType
+            Write-CDError $_
 
             $AppletIcon.BalloonTipIcon = $Icon
             $AppletIcon.BalloonTipTitle = $Message
@@ -3430,9 +3373,9 @@ Export-ModuleMember `
       'Install-FileTypeAssociations',
       'Install-Shortcuts',
       'Invoke-Applet',
-      'Invoke-AsAdministrator',
       'Invoke-LogRotate',
       'New-CackledaemonWD',
+      'New-CDLogRecord',
       'New-Download',
       'New-EmacsArchive',
       'New-ServerFileDirectory',
@@ -3450,13 +3393,12 @@ Export-ModuleMember `
       'Test-EmacsExe',
       'Test-ServerFileDirectory',
       'Update-EmacsInstall',
-      'Write-Log',
-      'Write-LogDebug',
-      'Write-LogError',
-      'Write-LogHost',
-      'Write-LogInformation',
-      'Write-LogVerbose',
-      'Write-LogWarning',
+      'Write-CDDebug',
+      'Write-CDError',
+      'Write-CDFatal',
+      'Write-CDInfo',
+      'Write-CDLog',
+      'Write-CDWarning',
       'Write-ProcessToPidFile'
   )`
   -Variable @(
@@ -3492,69 +3434,27 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
     PowerShellVersion = '5.1'
 
     # Modules that must be imported into the global environment prior to importing this module
-    # RequiredModules = @()
+    RequiredModules = @('PSeudo')
 
     # Assemblies that must be loaded prior to importing this module
     RequiredAssemblies = @('System.Windows.Forms')
 
-    # Script files (.ps1) that are run in the caller's environment prior to importing this module.
     # ScriptsToProcess = @()
 
-    # Modules to import as nested modules of the module specified in RootModule/ModuleToProcess
-    NestedModules = @('PSeudo.psm1')
+    # NestedModules = @('PSeudo')
 
     FunctionsToExport = @(
-        'Clear-ServerFileDirectory',
-        'Disable-Job',
         'Disable-LogRotateJob',
-        'Enable-Job',
         'Enable-LogRotateJob',
-        'Export-EmacsArchive'
         'Get-EmacsDaemon',
-        'Get-EmacsDownload',
-        'Get-EmacsExeVersion',
-        'Get-FileTypeAssociationsConfig',
-        'Get-LatestEmacsDownload',
-        'Get-ProcessFromPidFile',
-        'Get-ShortcutsConfig',
-        'Get-StartMenuItems',
-        'Get-StartMenuPath',
-        'Get-UnmanagedEmacsDaemon',
-        'Get-WShell',
-        'Get-Workspace',
         'Install-Emacs',
         'Install-EmacsUserEnvironment',
-        'Install-FileTypeAssociations',
         'Install-Shortcuts',
         'Invoke-Applet',
-        'Invoke-AsAdministrator',
-        'Invoke-LogRotate',
         'New-CackledaemonWD',
-        'New-Download',
-        'New-EmacsArchive',
-        'New-ServerFileDirectory',
-        'New-Shortcut',
-        'New-Version',
-        'New-Workspace',
-        'Remove-Workspace',
         'Restart-EmacsDaemon',
-        'Set-EmacsAppPathRegistryKeys',
-        'Set-EmacsPathEnvVariable',
-        'Set-HomeEnvVariable',
-        'Set-Shortcut',
         'Start-EmacsDaemon',
-        'Stop-EmacsDaemon',
-        'Test-EmacsExe',
-        'Test-ServerFileDirectory',
-        'Update-EmacsInstall',
-        'Write-Log',
-        'Write-LogDebug',
-        'Write-LogError',
-        'Write-LogHost',
-        'Write-LogInformation',
-        'Write-LogVerbose',
-        'Write-LogWarning',
-        'Write-ProcessToPidFile'
+        'Stop-EmacsDaemon'
     )
 
     CmdletsToExport = @()
@@ -3602,18 +3502,8 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
 Cackledaemon can be built and published using [[https://github.com/nightroman/Invoke-Build][Invoke-Build]].
 
 #+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
-task . Clean, DownloadDependencies, Build, Test
+task . Clean, Build, Test
 
-#+END_SRC
-** Downloading Vendored Dependencies
-In order to make Cackledaemon easier to install while also modularizing things a
-little bit, we download some (a) vendored dependency.
-#+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
-task DownloadDependencies {
-    Invoke-WebRequest `
-      'https://raw.githubusercontent.com/jfhbrook/PSeudo/master/PSeudo/PSeudo.psm1' `
-      -OutFile '.\Cackledaemon\Pseudo.psm1'
-}
 #+END_SRC
 ** Building Cackledaemon
 =Invoke-Build= will call Emacs in batch mode to build this project using
