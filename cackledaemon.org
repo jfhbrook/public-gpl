@@ -948,6 +948,7 @@ Describe 'New-CDLogRecord' {
         }
     }
 }
+
 Describe 'Write-CDLog' {
     BeforeEach {
         Initialize-TestEnvironment
@@ -2465,19 +2466,31 @@ function Get-OpenEmacsProcesses {
 function Wait-ForEmacsProcessExit {
     [CmdletBinding()]
     param(
-        [int]$PollingInterval = 1  # 1 Second
+        [int]$PollingInterval = 5,  # 1 Second
+        [int]$Timeout = 60  # 1 minute
     )
+
+    $StartTime = Get-Date
 
     $OpenProcesses = Get-OpenEmacsProcesses
 
     while ($OpenProcesses) {
+        if (((Get-Date) - $StartTime).TotalSeconds > $Timeout) {
+            $Exception = New-Object Exception "Emacs processes are still open after $Timeout seconds!"
+            $ErrorRecord = New-Object System.Management.Automation.ErrorRecord $Exception,'OpenEmacsProcessesException','LimitsExceeded',$null
+            Write-CDFatal $ErrorRecord
+        }
+
         Write-CDInfo "The following Emacs processes are open:"
 
-        $OpenProcesses | Write-CDInfo
+        $OpenProcesses | Out-String | Write-CDInfo
 
         Write-CDInfo "Please close these processes to continue."
+        Write-CDInfo ""
 
         Start-Sleep -Seconds $PollingInterval
+
+        $OpenProcesses = Get-OpenEmacsProcesses
     }
 }
 #+END_SRC
@@ -2553,7 +2566,7 @@ function Install-Emacs {
 
             Write-CDInfo ('Version {0} of Emacs is installed' -f $InstalledVersion)
 
-            Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -CurrentOperation 'Comparing versions...' -PercentComplete 57
+            Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -CurrentOperation 'Comparing versions...' -PercentComplete 67
 
             if ($LatestDownload.Version -gt $InstalledVersion) {
                 Write-CDInfo ('Upstream Emacs version {0} is newer than installed Emacs version {1}' -f $LatestDownload.Version, $InstalledVersion)
@@ -2586,43 +2599,45 @@ function Install-Emacs {
 
                 $Archive = $Workspace.GetArchive($TargetVersion);
             } else {
-                Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Downloading Emacs version $TargetVersion..." -PercentComplete 71
+                Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Downloading Emacs version $TargetVersion..." -PercentComplete 57
                 Write-CDInfo "Downloading Emacs version $TargetVersion..."
 
                 $Archive = New-EmacsArchive $LatestDownload
             }
 
-            Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Unpacking Emacs version $TargetVersion..." -PercentComplete 86
+            Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Unpacking Emacs version $TargetVersion..." -PercentComplete 71
             Write-CDInfo "Unpacking Emacs version $TargetVersion..."
 
             $Install = Export-EmacsArchive $Archive
         }
 
+        Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Waiting for Emacs to exit..."
+        Write-CDInfo 'In order to install Emacs, all Emacs processes must be closed.'
 
-        Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Executing Administrator commands...' -PercentComplete 60
+        Wait-ForEmacsProcessExit
+
+        Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Executing Administrator commands...' -PercentComplete 86
         Write-CDInfo "Executing Administrator commands..."
 
-        $ModulePath = (Get-Module Cackledaemon).Path
+        $ModulePath = (Get-Module -ListAvailable Cackledaemon).Path
 
-        Invoke-AsAdmin {
+        Invoke-AsAdministrator {
+            $ErrorActionPreference = 'Stop'
             $InformationPreference = 'Continue'
-            Import-Module '$ModulePath'
+
+            Write-Output "importing module"
+            Write-Output $ModulePath
+            Import-Module $ModulePath
+            Write-Output "updating emacs path"
             Update-EmacsInstall -Path $Install
+            Write-Output "setting emacs app path registry keys"
             Set-EmacsAppPathRegistryKeys
+            Write-Output "installing file type associations"
             Install-FileTypeAssociations
-        }
-
-        $AdminProcess | Write-Host
-        $AdminProcess.ExitCode | Write-Host
-
-        if ($AdminProcess.ExitCode) {
-            Write-Progress -Id 1 -Activity 'Installing Emacs' -Completed
-            $ExitCode = $AdminProcess.ExitCode
-            Write-CDInfo "Administrator commands failed with exit code $ExitCode. Check $CackledaemonLogFile for details."
-        } else {
-            Write-Progress -Id 1 -Activity 'Installing Emacs' -Completed
             Write-CDInfo "Emacs $TargetVersion is installed and ready to rock!"
         }
+
+        Write-Progress -Id 1 -Activity 'Installing Emacs' -Completed
     }
 }
 
@@ -3449,12 +3464,15 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
         'Get-EmacsDaemon',
         'Install-Emacs',
         'Install-EmacsUserEnvironment',
+        'Install-FileTypeAssociations',
         'Install-Shortcuts',
         'Invoke-Applet',
         'New-CackledaemonWD',
         'Restart-EmacsDaemon',
+        'Set-EmacsAppPathRegistryKeys',
         'Start-EmacsDaemon',
-        'Stop-EmacsDaemon'
+        'Stop-EmacsDaemon',
+        'Update-EmacsInstall'
     )
 
     CmdletsToExport = @()
