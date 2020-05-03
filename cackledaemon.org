@@ -2387,8 +2387,10 @@ Note that these commands must be ran with Administrator privileges.
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Install-FileTypeAssociations {
     Get-FileTypeAssociationsConfig | ForEach-Object {
-        cmd /c assoc ("{0}={1}" -f $_.Extension, $_.FileType)
-        cmd /c ftype ("{0}={1}" -f $_.FileType, $_.Command)
+        Write-Host ('{0}={1}' -f $_.Extension, $_.FileType)
+        Write-Host  ('{0}={1}' -f $_.FileType, $_.Command)
+        cmd /c assoc ('{0}={1}' -f $_.Extension, $_.FileType)
+        cmd /c ftype ('{0}={1}' -f $_.FileType, $_.Command)
     }
 }
 
@@ -2536,13 +2538,13 @@ function Install-Emacs {
     if (Test-Workspace) {
         $Workspace = Get-Workspace
     } else {
-        Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Creating workspace...' -PercentComplete 14
+        Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Creating workspace...' -PercentComplete 10
         Write-CDInfo 'Creating new workspace...'
 
         $Workspace = New-Workspace
     }
 
-    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking the Emacs website for the latest available download...' -PercentComplete 29
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking the Emacs website for the latest available download...' -PercentComplete 20
     Write-CDInfo 'Checking the Emacs website for the latest available download...'
 
     $LatestDownload = Get-LatestEmacsDownload
@@ -2551,7 +2553,7 @@ function Install-Emacs {
 
     $ShouldInstall = $False
 
-    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking if Emacs needs to be installed or updated...' -PercentComplete 43
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking if Emacs needs to be installed or updated...' -PercentComplete 30
 
     if ($Force) {
         Write-CDInfo "`$Force flag was enabled so installing Emacs regardless of what's installed"
@@ -2600,13 +2602,13 @@ function Install-Emacs {
 
                 $Archive = $Workspace.GetArchive($TargetVersion);
             } else {
-                Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Downloading Emacs version $TargetVersion..." -PercentComplete 57
+                Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Downloading Emacs version $TargetVersion..." -PercentComplete 40
                 Write-CDInfo "Downloading Emacs version $TargetVersion..."
 
                 $Archive = New-EmacsArchive $LatestDownload
             }
 
-            Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Unpacking Emacs version $TargetVersion..." -PercentComplete 71
+            Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Unpacking Emacs version $TargetVersion..." -PercentComplete 50
             Write-CDInfo "Unpacking Emacs version $TargetVersion..."
 
             $Install = Export-EmacsArchive $Archive
@@ -2617,26 +2619,32 @@ function Install-Emacs {
 
         Wait-ForEmacsProcessExit
 
-        Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Executing Administrator commands...' -PercentComplete 86
-        Write-CDInfo "Executing Administrator commands..."
+        Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Elevating privileges...' -PercentComplete 60
+        Write-CDInfo "Elevating privileges..."
 
-        $ModulePath = (Get-Module -ListAvailable Cackledaemon).Path
+        $ModulePath = Join-Path $PSScriptRoot 'Cackledaemon.psd1'
 
-        Invoke-AsAdministrator {
-            $ErrorActionPreference = 'Stop'
-            $InformationPreference = 'Continue'
+        Write-Host "Module path: '$ModulePath'"
 
-            Write-Output "importing module"
-            Write-Output $ModulePath
+        Invoke-AsAdministrator "
+            `$ErrorActionPreference = 'Stop'
+
             Import-Module $ModulePath
-            Write-Output "updating emacs path"
-            Update-EmacsInstall -Path $Install
-            Write-Output "setting emacs app path registry keys"
-            Set-EmacsAppPathRegistryKeys
-            Write-Output "installing file type associations"
+
+            Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Updating Emacs...' -PercentComplete 70
+            Write-CDInfo 'Updating Emacs...'
+            Update-EmacsInstall -Path $Install | Out-Null
+
+            Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Setting app path registry keys...' -PercentComplete 80
+            Write-CDInfo 'Setting app path registry keys...'
+            Set-EmacsAppPathRegistryKeys | Out-Null
+
+            Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Installing file type associations...' -PercentComplete 90
+            Write-CDInfo 'Installing file type associations...'
             Install-FileTypeAssociations
-            Write-CDInfo "Emacs $TargetVersion is installed and ready to rock!"
-        }
+
+            Write-CDInfo 'Emacs $TargetVersion is installed and ready to rock!'
+        "
 
         Write-Progress -Id 1 -Activity 'Installing Emacs' -Completed
     }
@@ -3474,7 +3482,13 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
         'Start-EmacsDaemon',
         'Stop-EmacsDaemon',
         'Test-EmacsExe',
-        'Update-EmacsInstall'
+        'Update-EmacsInstall',
+        'Write-CDDebug',
+        'Write-CDError',
+        'Write-CDFatal',
+        'Write-CDInfo',
+        'Write-CDLog',
+        'Write-CDWarning',
     )
 
     CmdletsToExport = @()
