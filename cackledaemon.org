@@ -836,7 +836,9 @@ function New-CDLogRecord {
         $Level = 'Warning'
     }
 
-    Write-Information -MessageData $MessageData -Tags (@($Level) + $Tags) 6>&1
+    $WriteInformation = Get-Command 'Write-Information' -CommandType Cmdlet
+
+    & $WriteInformation $MessageData (@($Level) + $Tags) 6>&1
 }
 
 function Write-CDLog {
@@ -853,12 +855,14 @@ function Write-CDLog {
         return
     }
 
-    $Timestamp = (Get-Date -Date $InformationRecord.TimeGenerated -Format o)
+    if ($InformationRecord) {
+        $Timestamp = (Get-Date -Date $InformationRecord.TimeGenerated -Format o)
 
-    $InformationRecord.MessageData | Out-String | ForEach-Object {
-        if ($_) {
-            $Line = '{0} [{1}] {2}' -f $Timestamp,($InformationRecord.Tags -join ':'),$_
-            Add-Content $CackledaemonLogFile -Value $Line
+        $InformationRecord.MessageData | Out-String | ForEach-Object {
+            if ($_) {
+                $Line = '{0} [{1}] {2}' -f $Timestamp,($InformationRecord.Tags -join ':'),$_
+                Add-Content $CackledaemonLogFile -Value $Line
+            }
         }
     }
 }
@@ -2387,10 +2391,8 @@ Note that these commands must be ran with Administrator privileges.
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Install-FileTypeAssociations {
     Get-FileTypeAssociationsConfig | ForEach-Object {
-        Write-Host ('{0}={1}' -f $_.Extension, $_.FileType)
-        Write-Host  ('{0}={1}' -f $_.FileType, $_.Command)
-        cmd /c assoc ('{0}={1}' -f $_.Extension, $_.FileType)
-        cmd /c ftype ('{0}={1}' -f $_.FileType, $_.Command)
+        cmd.exe /c ('assoc {0}={1}' -f $_.Extension, $_.FileType) | Out-Null
+        cmd.exe /c ('ftype {0}={1}' -f $_.FileType, $_.Command) | Out-Null
     }
 }
 
@@ -2556,7 +2558,7 @@ function Install-Emacs {
     Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking if Emacs needs to be installed or updated...' -PercentComplete 30
 
     if ($Force) {
-        Write-CDInfo "`$Force flag was enabled so installing Emacs regardless of what's installed"
+        Write-CDInfo "`-Force switch was enabled so installing Emacs regardless of what's installed"
 
         $ShouldInstall = $True
     } else {
@@ -2623,8 +2625,6 @@ function Install-Emacs {
         Write-CDInfo "Elevating privileges..."
 
         $ModulePath = Join-Path $PSScriptRoot 'Cackledaemon.psd1'
-
-        Write-Host "Module path: '$ModulePath'"
 
         Invoke-AsAdministrator "
             `$ErrorActionPreference = 'Stop'
@@ -3488,7 +3488,7 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
         'Write-CDFatal',
         'Write-CDInfo',
         'Write-CDLog',
-        'Write-CDWarning',
+        'Write-CDWarning'
     )
 
     CmdletsToExport = @()
