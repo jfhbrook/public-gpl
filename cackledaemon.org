@@ -2397,48 +2397,6 @@ function Install-FileTypeAssociations {
 }
 
 #+END_SRC
-** Running Things As Administrator
-Windows doesn't really have an analog to sudo for PowerShell, but we still have
-a need to run commands with elevated privileges.
-
-For this, we use [[https://github.com/jfhbrook/PSeudo][PSeudo]], a module that I maintain for this purpose. Development
-is ongoing and I'm currently going through some gnar licensing issues, but in
-the meantime these are some notes from a prior version:
-
-The [[https://knowyourmeme.com/memes/galaxy-brain][tiny brain]] version of this is to simply run ~Start-Process~ with the ~-Verb
-RunAs~ flag turned on and the desired code to be executed inside of a string.
-This works and is relatively safe. However, any IO that happens in that process
-stays with that process, and if the window is hidden or the process surprise
-exits then any information not written to a log file is lost.
-
-This procedure uses [[https://rkeithhill.wordpress.com/2014/11/01/windows-powershell-and-named-pipes/][named pipes]] to send information between the Administrator
-process and the parent process. The parent process takes payloads received from
-the Administrator process and sends them to the intended stream, while the
-script block for the Administrator process is templated to overlay aliass on
-Write-Host, Write-Error and Exit to send this information to the pipe
-accordingly, and to do cleanup on exit.
-
-When on the happy path, this means that you can pass a string or script block
-(which will implicitly get stringified correctly) to this function and it will
-run the code in an Administrator shell, seamlessly dumping the output into the
-parent terminal, "just like sudo".
-
-However, it's not very sophisticated. It only covers ~Write-Host~ and
-~Write-Error~ for output, leaving ~Debug~, ~Verbose~ and ~Information~ out in
-the cold. It also does very little to handle rich data structures or even
-multi-line strings. Code that gets passed to this function needs to be
-constructed carefully so as to cause the expected output behavior. If this were
-going to be turned into a separate module, more care would need to be taken to
-ensure complete coverage of IO functions.
-
-It's also important to note that named pipes in Windows are shockingly brittle.
-To wit: The ~WaitForConnection~ method is blocking, is not ~C-c~-able, and will
-stop the parent PowerShell process from exiting.
-
-TL;DR: This procedure evaluates string inputs at elevated privilege levels with
-the added ability of being able to brick the host process, so it's imperative
-that any script authors ensure that strings passed to this function are sound
-and not vulnerable to injections or error explosions.
 ** Ensuring that Emacs is Closed
 The Windows OS will absolutely refuse to move or delete a file that is currently
 open in another process, and that includes running executables, such as
@@ -2480,7 +2438,7 @@ function Wait-ForEmacsProcessExit {
     $OpenProcesses = Get-OpenEmacsProcesses
 
     while ($OpenProcesses) {
-        if (((Get-Date) - $StartTime).TotalSeconds > $Timeout) {
+        if (((Get-Date) - $StartTime).TotalSeconds -gt $Timeout) {
             $Exception = New-Object Exception "Emacs processes are still open after $Timeout seconds!"
             $ErrorRecord = New-Object System.Management.Automation.ErrorRecord $Exception,'OpenEmacsProcessesException','LimitsExceeded',$null
             Write-CDFatal $ErrorRecord
@@ -2498,6 +2456,32 @@ function Wait-ForEmacsProcessExit {
         $OpenProcesses = Get-OpenEmacsProcesses
     }
 }
+#+END_SRC
+** Post-Install Hooks
+After Emacs is updated, sometimes bytecode needs to be recompiled. This is going
+to be a process specific to your Emacs config. Cackledaemon supports running
+post-install hooks to support these cases.
+
+For example, if you're using Doom Emacs, you might add this to your ~Configuration.ps1~::
+
+#+BEGIN_SRC powershell
+$PostInstallHook = { doom build }
+#+END_SRC
+
+It supports both script blocks and string commands.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Invoke-PostInstallHook {
+    . $CackledaemonConfigLocation
+
+    if ($PostInstallHook -is [string]) {
+        Invoke-Expression $PostInstallHook
+    }
+    if ($PostInstallHook -is [scriptblock]) {
+        & $PostInstallHook
+    }
+}
+
 #+END_SRC
 ** Putting It All Together
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
@@ -2540,13 +2524,13 @@ function Install-Emacs {
     if (Test-Workspace) {
         $Workspace = Get-Workspace
     } else {
-        Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Creating workspace...' -PercentComplete 10
+        Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Creating workspace...' -PercentComplete 09
         Write-CDInfo 'Creating new workspace...'
 
         $Workspace = New-Workspace
     }
 
-    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking the Emacs website for the latest available download...' -PercentComplete 20
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking the Emacs website for the latest available download...' -PercentComplete 18
     Write-CDInfo 'Checking the Emacs website for the latest available download...'
 
     $LatestDownload = Get-LatestEmacsDownload
@@ -2555,7 +2539,7 @@ function Install-Emacs {
 
     $ShouldInstall = $False
 
-    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking if Emacs needs to be installed or updated...' -PercentComplete 30
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking if Emacs needs to be installed or updated...' -PercentComplete 27
 
     if ($Force) {
         Write-CDInfo "`-Force switch was enabled so installing Emacs regardless of what's installed"
@@ -2604,13 +2588,13 @@ function Install-Emacs {
 
                 $Archive = $Workspace.GetArchive($TargetVersion);
             } else {
-                Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Downloading Emacs version $TargetVersion..." -PercentComplete 40
+                Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Downloading Emacs version $TargetVersion..." -PercentComplete 36
                 Write-CDInfo "Downloading Emacs version $TargetVersion..."
 
                 $Archive = New-EmacsArchive $LatestDownload
             }
 
-            Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Unpacking Emacs version $TargetVersion..." -PercentComplete 50
+            Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Unpacking Emacs version $TargetVersion..." -PercentComplete 45
             Write-CDInfo "Unpacking Emacs version $TargetVersion..."
 
             $Install = Export-EmacsArchive $Archive
@@ -2621,7 +2605,7 @@ function Install-Emacs {
 
         Wait-ForEmacsProcessExit
 
-        Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Elevating privileges...' -PercentComplete 60
+        Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Elevating privileges...' -PercentComplete 55
         Write-CDInfo "Elevating privileges..."
 
         $ModulePath = Join-Path $PSScriptRoot 'Cackledaemon.psd1'
@@ -2631,20 +2615,24 @@ function Install-Emacs {
 
             Import-Module $ModulePath
 
-            Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Updating Emacs...' -PercentComplete 70
+            Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Updating Emacs...' -PercentComplete 63
             Write-CDInfo 'Updating Emacs...'
             Update-EmacsInstall -Path $Install | Out-Null
 
-            Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Setting app path registry keys...' -PercentComplete 80
+            Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Setting app path registry keys...' -PercentComplete 73
             Write-CDInfo 'Setting app path registry keys...'
             Set-EmacsAppPathRegistryKeys | Out-Null
 
-            Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Installing file type associations...' -PercentComplete 90
+            Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Installing file type associations...' -PercentComplete 81
             Write-CDInfo 'Installing file type associations...'
             Install-FileTypeAssociations
 
             Write-CDInfo 'Emacs $TargetVersion is installed and ready to rock!'
         "
+
+        Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Running post-install hook...' -PercentComplete 91
+        Write-CDInfo "Running post-install hook..."
+        Invoke-PostInstallHook
 
         Write-Progress -Id 1 -Activity 'Installing Emacs' -Completed
     }
@@ -3398,6 +3386,7 @@ Export-ModuleMember `
       'Install-Shortcuts',
       'Invoke-Applet',
       'Invoke-LogRotate',
+      'Invoke-PostInstallHook',
       'New-CackledaemonWD',
       'New-CDLogRecord',
       'New-Download',
