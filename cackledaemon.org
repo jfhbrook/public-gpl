@@ -2761,7 +2761,9 @@ function Get-ProcessFromPidFile {
 
     $Id = (Get-Content $PidFile | ConvertFrom-Json)
 
-    $Process = Get-Process -Id $Id -ErrorAction SilentlyContinue
+    if ($Id) {
+        $Process = Get-Process -Id $Id -ErrorAction SilentlyContinue
+    }
 
     if (-not $Process) {
         Remove-Item $PidFile
