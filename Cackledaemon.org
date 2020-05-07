@@ -3541,7 +3541,7 @@ This emacs batch script tangles ~cackledaemon.org~ and generates the ~README.md~
   (require 'ob-tangle)
   (require 'ox-md)
 
-  (with-current-buffer (find-file-noselect "cackledaemon.org")
+  (with-current-buffer (find-file-noselect "Cackledaemon.org")
     (message "Tangling Code...")
     (org-babel-tangle)
     (message "Generating README...")
