@@ -3305,6 +3305,20 @@ function Invoke-Applet {
 
     $ContextMenu.MenuItems.Add('-') | Out-Null
 
+    $InstallWizardItem = New-Object System.Windows.Forms.MenuItem
+    $InstallWizardItem.Text = 'Check for updates...'
+    $InstallWizardItem.add_Click({
+        Start-InstrumentedBlock 'Failed to launch install wizard' {
+            Start-Process powershell.exe -ArgumentList @(
+                '-NoExit',
+                '-Command', (Join-Path $PSScriptRoot 'InstallWizard.ps1')
+            )
+        }
+    })
+    $ContextMenu.MenuItems.Add($InstallWizardItem) | Out-Null
+
+    $ContextMenu.MenuItems.Add('-') | Out-Null
+
     $EditConfigItem = New-Object System.Windows.Forms.MenuItem
     $EditConfigItem.Text = 'Edit Configuration...'
     $EditConfigItem.add_Click({
