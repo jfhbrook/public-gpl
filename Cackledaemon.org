@@ -70,7 +70,13 @@ management and rotation, and a tray icon for a lil' point-and-click action and
 notifications for if/when Emacs exits unexpectedly.
 
 * Installing Cackledaemon
-#+BEGIN_SRC powershell :tangle ./Installer.ps1
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+Set-Alias Invoke-CDInstallWizard (Join-Path $PSScriptRoot 'InstallWizard.ps1')
+
+#+END_SRC
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/InstallWizard.ps1
 #Requires -Version 5.1
 
 Write-Host 'Welcome to the Cackledaemon install wizard!'
@@ -3362,6 +3368,9 @@ function Invoke-Applet {
 * Exports
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 Export-ModuleMember `
+  -Alias @(
+      'Invoke-CDInstallWizard'
+  ) `
   -Function @(
       'Clear-ServerFileDirectory',
       'Disable-Job',
@@ -3458,6 +3467,8 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
 
     # NestedModules = @('PSeudo')
 
+    AliasesToExport = @('Invoke-CDInstallWizard')
+
     FunctionsToExport = @(
         'Disable-LogRotateJob',
         'Enable-LogRotateJob',
@@ -3483,6 +3494,7 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
     )
 
     CmdletsToExport = @()
+
     VariablesToExport = @(
         'CackledaemonConfigLocation',
         'CackledaemonWD'
@@ -3494,6 +3506,7 @@ https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-wr
         'Configuration.ps1',
         'COPYING',
         'FileTypeAssociations.csv',
+        'InstallWizard.ps1',
         'Shortcuts.csv'
     )
     ModuleList = @('.\Cackledaemon.psm1')
