@@ -70,6 +70,9 @@ management and rotation, and a tray icon for a lil' point-and-click action and
 notifications for if/when Emacs exits unexpectedly.
 
 * Installing Cackledaemon
+#+BEGIN_SRC powershell
+Invoke-Expression (New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/jfhbrook/cackledaemon/master/Cackledaemon/InstallWizard.ps1')
+#+END_SRC
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 Set-Alias Invoke-CDInstallWizard (Join-Path $PSScriptRoot 'InstallWizard.ps1')
