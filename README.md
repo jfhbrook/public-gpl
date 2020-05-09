@@ -6,64 +6,167 @@
 > 
 > &#x2013; Strong Bad
 
-Anyone who has used a fully configured [Emacs](https://www.gnu.org/software/emacs/) install such as [Spacemacs](https://www.spacemacs.org/) or [Doom](https://github.com/hlissner/doom-emacs)
-knows that Emacs can take a long time to initially boot. This isn't for a lack
-of trying - in fact, the source code for Doom is half speed hacks and I highly
-encourage anybody hacking on Emacs to take a look.
+In recent times I've become a big fan of [Emacs](https://www.gnu.org/software/emacs/). On a really surface level Emacs
+is a humble code editor, but the truth is that Emacs is less a code editor and
+more of a **framework** for **writing text-based applications**. I like to compare
+it to [Node.js](https://nodejs.org) in this regard, which, while really good at being a webserver is
+no [NGINX](https://www.nginx.com/), but instead a runtime where you can import lots of tiny pieces of
+functionality a la carte to make your own webserver. Any one of these
+configurations does exactly this - it installs packages from the internet,
+requires them and uses [Emacs Lisp](https://www.gnu.org/software/emacs/manual/html_node/eintr/) to create a complete application. I use a
+third party configuration called [Doom Emacs](https://github.com/hlissner/doom-emacs), which uses a package called [evil](https://github.com/emacs-evil/evil)
+that makes Emacs pretend to be [vim](https://www.vim.org/) (my prior code editor of choice). In addition
+to editing code, I also use Emacs for personal task management, using an Emacs
+package called [org-mode](https://orgmode.org/) combined with a process somewhere in between [GTD](https://en.wikipedia.org/wiki/Getting_Things_Done) and
+[bullet jouraling](https://en.wikipedia.org/wiki/Bullet_Journal).
 
-The truth is that Emacs is less a code editor and more of a **framework** for
-**writing text-based applications**. I like to compare it to [Node.js](https://nodejs.org) in this
-regard, which, while really good at being a webserver is no [NGINX](https://www.nginx.com/), but instead a
-runtime where you can import lots of tiny pieces of functionality a la carte to
-make your own webserver. Any one of these configurations does exactly this - it
-installs packages from the internet, requires them and uses [Emacs Lisp](https://www.gnu.org/software/emacs/manual/html_node/eintr/) to create
-a complete application. Spacemacs and Doom are built similarly, but feel
-different because they **are** in fact meaningfully different.
+I also have a lot of computers and I use Emacs on all of them. One of these
+computers happens to run Windows 10 - meaning that I run Emacs on Windows.
 
-Just as you don't want to load the JavaScript runtime for every request (this is
-how non-Node webservers [used to do in the olden days](https://en.wikipedia.org/wiki/Common_Gateway_Interface) and trust me it was not
-very good) you don't really want to load all of Emacs every time you open a file
-either. It's less than ideal.
+Running Emacs in Windows is a bit of a mess. This is because Emacs was written
+with \*nix OS's in mind. This meas that in Linux you can casually install it with
+your package manager and everything Just Works, and that in OSX you can install
+either a [universal binary](https://emacsformacosx.com/) or - if you prefer - [homebrew](https://brew.sh/), and have a more or less
+seamless process. Windows, meanwhile, doesn't have a nice installer, environment
+configuration is up to interpretation, actually invoking Emacs differs
+significantly, and running Emacs as a daemon becomes difficult.
 
-Luckily for us, Emacs can be ran [as a daemon](https://www.emacswiki.org/emacs/EmacsAsDaemon) and connected to via a client,
-typically `emacsclient`. In Linux and [systemd](https://www.freedesktop.org/wiki/Software/systemd/) this works seamlessly - often you
-can run `systemctl start --user emacs` and be off to the races. In OSX it's only
-a little harder - you [copy-paste a plist file from the wiki](https://www.emacswiki.org/emacs/EmacsAsDaemon#toc8), pull some very
-minor shenanigans and have a mostly working daemon.
+This project, a [PowerShell](https://docs.microsoft.com/en-us/powershell/scripting/overview?view=powershell-5.1) module written as a [literate program](https://en.wikipedia.org/wiki/Literate_programming) using [org-babel](https://orgmode.org/worg/org-contrib/babel/),
+contains tools for managing Emacs on Windows, namely an ****installation setup
+wizard**** and a ****tray icon for managing the Emacs daemon****.
 
-In Windows it's a bit more of a mess. This is because the Windows abstractions
-for processes and services are wildly divergent from those in nix-like
-environments such as Linux and OSX. Init systems like systemd run and manage
-normal process, meanwhile in Windows services are in fact [special programs](https://docs.microsoft.com/en-us/dotnet/framework/windows-services/walkthrough-creating-a-windows-service-application-in-the-component-designer) that
-[expose an alternate interface](https://docs.microsoft.com/en-us/dotnet/api/system.serviceprocess?view=netframework-4.8) to that of the standard process. The upshot is
-that any standard process that one wants to run as a Windows service needs to be
-wrapped in one of these special programs, complete with bespoke abstractions for
-process management, log management and so on.
 
-Alternately, arbitrary processes may be [configured to start on user login](https://support.microsoft.com/en-us/help/4026268/windows-10-change-startup-apps).
-Practically speaking, this is how most persistent applications are ran in
-Windows, and in fact the [approach documented in the wiki](https://www.emacswiki.org/emacs/EmacsMsWindowsIntegration#toc8) does exactly this - it
-uses a Powershell script to generate a very simple [batch file](https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/windows-commands) that cleans up
-server state from the prior run and then spawns the Emacs daemon.
+## Getting Started
 
-This works OK. However, there are some downsides. if the Emacs daemon crashes
-for any reason, there's no signal other than `emacsclient` mysteriously not
-working; any logs that come out of the Emacs daemon are lost to the aether; and
-straightforward lifecycle actions that can be done casually with systemd (start,
-top, restart, status) are very non-ergonomic.
+Cackledaemon includes an installation wizard that will install the Cackledaemon
+module off [the PowerShell Gallery](https://www.powershellgallery.com/packages/Cackledaemon) and then walk the user through installing
+Emacs, setting up their environment, and installing the tray icon, configuring
+it to run when you log into Windows. You can download and run the latest version
+of this installer by copying and pasting the following snippet into a PowerShell
+window.
 
-Luckily, [PowerShell](https://docs.microsoft.com/en-us/powershell/scripting/overview) has our back. PowerShell is a shockingly good language - it
-performs admirably as a shell and yet scales to general purpose use, even being
-capable of making proper [.NET classes](https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_classes). More to the point, it's very good at
-[managing processes](https://docs.microsoft.com/en-us/powershell/scripting/samples/managing-processes-with-process-cmdlets) and has [special support for background jobs](https://docs.microsoft.com/en-us/powershell/scripting/developer/cmdlet/background-jobs), as well as being
-able to [instantiate and manage tray icons](https://docs.microsoft.com/en-us/dotnet/api/system.windows.forms.notifyicon) via [Windows Forms](https://docs.microsoft.com/en-us/dotnet/framework/winforms/). All it needs is a
-little elbow grease!
+    Invoke-Expression (New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/jfhbrook/cackledaemon/master/Cackledaemon/InstallWizard.ps1')
 
-Cackledaemon is a PowerShell module that intends to be a solution for managing
-such an instance of the Emacs daemon for Windows. It includes functions for
-starting, stopping and restarting the Emacs daemon, functions and jobs for log
-management and rotation, and a tray icon for a lil' point-and-click action and
-notifications for if/when Emacs exits unexpectedly.
+You don't need to run this as Administrator - Cackledaemon will install
+itself for your user and will prompt for Administrator access whenever it needs
+to install Emacs system-wide.
+
+
+## Learning More
+
+The [source code for Cackledaemon](https://github.com/jfhbrook/cackledaemon/blob/master/Cackledaemon.org), a literate program with prose and source code
+intermixed, should be readable from top to bottom and contains all the
+information someone would need to use it effectively.
+
+
+## Building Cackledaemon
+
+This project uses [Invoke-Build](https://github.com/nightroman/Invoke-Build) to manage its tasks. Running `Invoke-Build` by
+default will clean up old files, run the build and run tests.
+
+    task . Clean, Build, Test
+
+Before running the build, it's a good idea to use `Remove-Item` to clean up old
+files, especially if any of the filenames that org-mode is tangling to have
+changed. Running `Invoke-Build` without arguments will run this step
+automatically, but it can be ran in isolation with `Invoke-Build Clean`.
+
+    task Clean {
+      Get-ChildItem './Cackledaemon' | ForEach-Object {
+        Remove-Item $_.FullName
+      }
+      Remove-Item 'README.md' -ErrorAction 'SilentlyContinue'
+      Remove-Item 'README.md~' -ErrorAction 'SilentlyContinue'
+    }
+
+The build itself can be started in isolation by running `Invoke-Build Build`.
+
+    task Build {
+      emacs.exe --batch --load build.el
+      Copy-Item 'COPYING' .\Cackledaemon\COPYING -ErrorAction 'SilentlyContinue'
+      Remove-Item 'README.md~' -ErrorAction 'SilentlyContinue'
+    }
+
+This task will call Emacs in [batch mode](https://www.gnu.org/software/emacs/manual/html_node/elisp/Batch-Mode.html) to tangle this file into the working
+module using `org-babel` and export the README. Alternately, you may type `C-c
+C-v t` with this file open in Emacs to tangle it and use `org-export-to-file` to
+export the README.
+
+    (progn
+      (require 'org)
+      (require 'ob-tangle)
+      (require 'ox-md)
+    
+      (with-current-buffer (find-file-noselect "Cackledaemon.org")
+        (message "Tangling Code...")
+        (org-babel-tangle)
+        (message "Generating README...")
+        (org-export-to-file 'md "README.md"))
+      (message "Done."))
+
+
+## Testing Cackledaemon
+
+Cackledaemon's tests use the [Pester test framework](https://pester.dev/). Each test runs in a test environment
+that sets up an isolated environment that writes files to a [test drive](https://pester.dev/docs/usage/testdrive).
+
+    function Initialize-TestEnvironment {
+      $Global:OriginalAppData = $Env:AppData
+      $Global:OriginalProgramFiles = $Env:ProgramFiles
+      $Global:OriginalUserProfile = $Env:UserProfile
+      $Global:OriginalModulePath = (Get-Module 'Cackledaemon').Path
+    
+      $Env:AppData = "$TestDrive\AppData"
+      $Env:ProgramFiles = "$TestDrive\Program Files"
+    
+      $Env:UserProfile = "$TestDrive\UserProfile"
+    
+      New-Item -Type Directory $Env:AppData
+      New-Item -Type Directory $Env:ProgramFiles
+      New-Item -Type Directory $Env:UserProfile
+    
+      Remove-Module Cackledaemon -ErrorAction 'SilentlyContinue'
+      Import-Module PSeudo
+      Import-Module .\Cackledaemon\Cackledaemon.psm1
+    
+      $Global:CackledaemonWD = "$TestDrive\Cackledaemon"
+      $Global:CackledaemonConfigLocation = "$TestDrive\Cackledaemon\Configuration.ps1"
+    
+      New-CackledaemonWD
+    }
+    
+    function Restore-StandardEnvironment {
+      $Env:AppData = $Global:OriginalAppData
+      $Env:ProgramFiles = $Global:OriginalProgramFiles
+      $Env:UserProfile = $Global:OriginalUserProfile
+    
+      Remove-Item -Recurse "$TestDrive\AppData"
+      Remove-Item -Recurse "$TestDrive\Program Files"
+      Remove-Item -Recurse "$TestDrive\UserProfile"
+      Remove-Item -Recurse "$TestDrive\Cackledaemon"
+    
+      Remove-Module Cackledaemon
+    
+      if ($Global:OriginalModulePath) {
+        Import-Module $Global:OriginalModulePath
+      }
+    }
+
+The tests will be ran automatically when running `Invoke-Build` by default but
+can be started in isolation by running `Invoke-Build Test`. Note that the tests
+are ran in a subprocess - this is to help ensure that the state of your
+environment isn't inadvertently modified by the tests.
+
+    task Test {
+      powershell -Command Invoke-Pester
+    }
+
+
+## Licensing
+
+Cackledaemon is absolutely 100% not a part of GNU Emacs, but **is** similarly
+licensed under a GPLv3+ license. This means that Cackledaemon is free software,
+as defined by the Free Software Foundation.
 
 
 # License
