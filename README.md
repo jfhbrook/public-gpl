@@ -126,7 +126,6 @@ that sets up an isolated environment that writes files to a [test drive](https:/
       New-Item -Type Directory $Env:UserProfile
     
       Remove-Module Cackledaemon -ErrorAction 'SilentlyContinue'
-      Import-Module PSeudo
       Import-Module .\Cackledaemon\Cackledaemon.psm1
     
       $Global:CackledaemonWD = "$TestDrive\Cackledaemon"
