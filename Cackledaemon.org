@@ -175,7 +175,8 @@ task Test {
 ** Licensing
 Cackledaemon is absolutely 100% not a part of GNU Emacs, but *is* similarly
 licensed under a GPLv3+ license. This means that Cackledaemon is free software,
-as defined by the Free Software Foundation.
+as defined by the Free Software Foundation. See the COPYING file for more
+details.
 * Installing Cackledaemon
 The Cackledaemon install wizard is a script that will walk you through setting
 up Cackledaemon and Emacs. Cackledaemon requires Windows PowerShell v5.1 - as
@@ -3770,10 +3771,7 @@ task Publish Build, Test, {
 }
 #+END_SRC
 
-* License :export:
-Cackledaemon, much like Emacs, is licensed under the terms of the GPL v3 or
-newer.
-
+* Licensing:export:
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 # Copyright 2020 Josh Holbrook
 #
