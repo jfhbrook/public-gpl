@@ -73,7 +73,6 @@ if (Test-Path $CackledaemonWD) {
   $ModuleDirectory = Split-Path -Path (Get-Module Cackledaemon).Path -Parent
   $StartMenuPath = Join-Path $Env:AppData 'Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
   $ShortcutsCsvPath = Join-Path $ModuleDirectory 'Shortcuts.csv'
-  $FileTypeAssociationsCsvPath = Join-Path $ModuleDirectory 'FileTypeAssociations.csv'
 
   Write-Host "By default, Cackledaemon will " -NoNewLine
   Write-Host "create these shortcuts" -ForegroundColor Green -NoNewLine
@@ -106,47 +105,7 @@ if (Test-Path $CackledaemonWD) {
   )
   Write-Host ''
 
-  Write-Host "By default, Cackledaemon will " -NoNewLine
-  Write-Host "create" -ForegroundColor Green -NoNewLine
-  Write-Host " these " -NoNewLine
-  Write-Host "system-wide" -ForegroundColor Red -NoNewLine
-  Write-Host " file type associations:"
-  Write-Host ""
-  Import-Csv -Path $FileTypeAssociationsCsvPath | ForEach-Object {
-    Write-Host "- " -NoNewLine
-    Write-Host $_.Extension -ForegroundColor Green -NoNewLine
-    Write-Host " -(" -NoNewLine
-    Write-Host $_.FileType -ForegroundColor Cyan -NoNewLine
-    Write-Host ")-> " -NoNewLine
-    Write-Host $_.Command -ForegroundColor Yellow
-  } | Out-Null
-  Write-Host ""
-  Write-Host "You may " -NoNewLine
-  Write-Host "edit this config" -ForegroundColor Cyan -NoNewLine
-  Write-Host " at " -NoNewLine
-  Write-Host "$CackledaemonWD\FileTypeAssociations.csv" -ForegroundColor Yellow -NoNewLine
-  Write-Host " and re-run the Emacs install step at " -NoNewLine
-  Write-Host "any time" -ForegroundColor Green -NoNewLine
-  Write-Host " to create new associations. You may also " -NoNewLine
-  Write-Host "manually create " -ForegroundColor Cyan -NoNewLine
-  Write-Host "user-level" -ForegroundColor Green -NoNewLine
-  Write-Host " file type associations inside " -NoNewLine
-  Write-Host "Windows Explorer" -ForegroundColor Cyan -NoNewLine
-  Write-Host '.'
-
-  $InstallAssociationsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Create these file type associations for all users. You can edit this CSV and re-run this step at any time."
-  $DontInstallAssociationsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Don't create any file type associations. You can edit this CSV and re-run this step at any time."
-
-  $NoFileTypeAssociations = [boolean]$host.UI.PromptForChoice(
-    "Do you want to use these file type associations?",
-    "Whaddaya think?",
-    @($InstallAssociationsChoice, $DontInstallAssociationsChoice),
-    0
-  )
-
-  Write-Host "Initializing $CackledaemonWD..."
-  New-CackledaemonWD -NoShortcuts $NoShortcuts -NoFileTypeAssociations $NoFileTypeAssociations | Out-Null
-
+  New-CackledaemonWD -NoShortcuts $NoShortcuts | Out-Null
 }
 
 Write-Host "Checking the state of Emacs..."

@@ -266,8 +266,7 @@ if (-not $InstalledModule) {
 #+END_SRC
 
 Next, it asks some questions about configuration, namely about which shortcuts
-to create when setting up the user's environment and which file type
-associations to create when installing Emacs. These settings are stored in
+to create when setting up the user's environment. These settings are stored in
 =~/AppData/Roaming/Cackledaemon= and can be modified with any text editor,
 including Emacs.
 
@@ -284,7 +283,6 @@ if (Test-Path $CackledaemonWD) {
   $ModuleDirectory = Split-Path -Path (Get-Module Cackledaemon).Path -Parent
   $StartMenuPath = Join-Path $Env:AppData 'Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
   $ShortcutsCsvPath = Join-Path $ModuleDirectory 'Shortcuts.csv'
-  $FileTypeAssociationsCsvPath = Join-Path $ModuleDirectory 'FileTypeAssociations.csv'
 
   Write-Host "By default, Cackledaemon will " -NoNewLine
   Write-Host "create these shortcuts" -ForegroundColor Green -NoNewLine
@@ -317,47 +315,7 @@ if (Test-Path $CackledaemonWD) {
   )
   Write-Host ''
 
-  Write-Host "By default, Cackledaemon will " -NoNewLine
-  Write-Host "create" -ForegroundColor Green -NoNewLine
-  Write-Host " these " -NoNewLine
-  Write-Host "system-wide" -ForegroundColor Red -NoNewLine
-  Write-Host " file type associations:"
-  Write-Host ""
-  Import-Csv -Path $FileTypeAssociationsCsvPath | ForEach-Object {
-    Write-Host "- " -NoNewLine
-    Write-Host $_.Extension -ForegroundColor Green -NoNewLine
-    Write-Host " -(" -NoNewLine
-    Write-Host $_.FileType -ForegroundColor Cyan -NoNewLine
-    Write-Host ")-> " -NoNewLine
-    Write-Host $_.Command -ForegroundColor Yellow
-  } | Out-Null
-  Write-Host ""
-  Write-Host "You may " -NoNewLine
-  Write-Host "edit this config" -ForegroundColor Cyan -NoNewLine
-  Write-Host " at " -NoNewLine
-  Write-Host "$CackledaemonWD\FileTypeAssociations.csv" -ForegroundColor Yellow -NoNewLine
-  Write-Host " and re-run the Emacs install step at " -NoNewLine
-  Write-Host "any time" -ForegroundColor Green -NoNewLine
-  Write-Host " to create new associations. You may also " -NoNewLine
-  Write-Host "manually create " -ForegroundColor Cyan -NoNewLine
-  Write-Host "user-level" -ForegroundColor Green -NoNewLine
-  Write-Host " file type associations inside " -NoNewLine
-  Write-Host "Windows Explorer" -ForegroundColor Cyan -NoNewLine
-  Write-Host '.'
-
-  $InstallAssociationsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Create these file type associations for all users. You can edit this CSV and re-run this step at any time."
-  $DontInstallAssociationsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Don't create any file type associations. You can edit this CSV and re-run this step at any time."
-
-  $NoFileTypeAssociations = [boolean]$host.UI.PromptForChoice(
-    "Do you want to use these file type associations?",
-    "Whaddaya think?",
-    @($InstallAssociationsChoice, $DontInstallAssociationsChoice),
-    0
-  )
-
-  Write-Host "Initializing $CackledaemonWD..."
-  New-CackledaemonWD -NoShortcuts $NoShortcuts -NoFileTypeAssociations $NoFileTypeAssociations | Out-Null
-
+  New-CackledaemonWD -NoShortcuts $NoShortcuts | Out-Null
 }
 
 #+END_SRC
@@ -495,8 +453,7 @@ $CackledaemonConfigLocation = Join-Path $CackledaemonWD 'Configuration.ps1'
 
 function New-CackledaemonWD {
     param(
-        [switch]$NoShortcuts,
-        [switch]$NoFileTypeAssociations
+        [switch]$NoShortcuts
     )
     New-Item -Path $CackledaemonWD -ItemType directory
 
@@ -506,10 +463,6 @@ function New-CackledaemonWD {
 
     if (-not $NoShortcuts) {
         Copy-Item (Join-Path $ModuleDirectory 'Shortcuts.csv') (Join-Path $CackledaemonWD 'Shortcuts.csv')
-    }
-
-    if (-not $NoFileTypeAssociations) {
-        Copy-Item (Join-Path $ModuleDirectory 'FileTypeAssociations.csv') (Join-Path $CackledaemonWD 'FileTypeAssociations.csv')
     }
 }
 
@@ -529,14 +482,13 @@ Describe "New-CackledaemonWD" {
     Restore-StandardEnvironment
   }
 
-  Context 'when shortcuts and file type associations are both enabled' {
+  Context 'when shortcuts are enabled' {
     It "creates a new and initialized working directory" {
       New-CackledaemonWD
 
       'TestDrive:\Cackledaemon' | Should -Exist
       'TestDrive:\Cackledaemon\Configuration.ps1' | Should -Exist
       'TestDrive:\Cackledaemon\Shortcuts.csv' | Should -Exist
-      'TestDrive:\Cackledaemon\FileTypeAssociations.csv' | Should -Exist
     }
   }
 
@@ -547,29 +499,6 @@ Describe "New-CackledaemonWD" {
       'TestDrive:\Cackledaemon' | Should -Exist
       'TestDrive:\Cackledaemon\Configuration.ps1' | Should -Exist
       'TestDrive:\Cackledaemon\Shortcuts.csv' | Should -Not -Exist
-      'TestDrive:\Cackledaemon\FileTypeAssociations.csv' | Should -Exist
-    }
-  }
-
-  Context 'when file type associations are disabled' {
-    It "creates a new and initialized working directory without file type associations" {
-      New-CackledaemonWD -NoFileTypeAssociations
-
-      'TestDrive:\Cackledaemon' | Should -Exist
-      'TestDrive:\Cackledaemon\Configuration.ps1' | Should -Exist
-      'TestDrive:\Cackledaemon\Shortcuts.csv' | Should -Exist
-      'TestDrive:\Cackledaemon\FileTypeAssociations.csv' | Should -Not -Exist
-    }
-  }
-
-  Context 'when both shortcuts and file type associations are disabled' {
-    It "creates a new and initialized working directory without file type associations" {
-      New-CackledaemonWD -NoShortcuts -NoFileTypeAssociations
-
-      'TestDrive:\Cackledaemon' | Should -Exist
-      'TestDrive:\Cackledaemon\Configuration.ps1' | Should -Exist
-      'TestDrive:\Cackledaemon\Shortcuts.csv' | Should -Not -Exist
-      'TestDrive:\Cackledaemon\FileTypeAssociations.csv' | Should -Not -Exist
     }
   }
 }
@@ -730,78 +659,6 @@ Describe 'Get-ShortcutsConfig' {
   }
 }
 
-#+END_SRC
-** File Type Associations Config
-Desired file type associations are also stored in a CSV file. The format of the
-command string is detailed in [[https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/ftype][the documentation for the ~ftype~ batch command.]]
-
-#+BEGIN_SRC csv :tangle ./Cackledaemon/FileTypeAssociations.csv
-#Type FileTypeAssociationCsvRecord
-"FileType","Extension","Command"
-Gnu.Emacs.Org,.org,emacsclientw.exe -c -a notepad.exe %1
-Gnu.Emacs.ELisp,.el,emacsclientw.exe -c -a notepad.exe %1
-#+END_SRC
-
-Note that the ~TYPE~ header is necessary, as Cackledeamon uses the same
-technique to load the CSV as with shortcuts, albeit without ~CovertFrom-Json~.
-
-#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-class FileTypeAssociationRecord {
-  [string]$FileType
-  [string]$Extension
-  [string]$Command
-
-  FileTypeAssociationRecord(
-    [string]$FileType,
-    [string]$Extension,
-    [string]$Command
-  ) {
-    $this.FileType = $FileType
-    $this.Extension = $Extension
-    $this.Command = $Command
-  }
-}
-
-class FileTypeAssociationCsvRecord : FileTypeAssociationRecord {
-  FileTypeAssociationCsvRecord([string]$FileType, [string]$Extension, [string]$Command): base($FileType, $Extension, $Command) {}
-}
-
-function Get-FileTypeAssociationsConfig {
-  Import-Csv -Path (Join-Path $CackledaemonWD './FileTypeAssociations.csv') | ForEach-Object {
-    New-Object FileTypeAssociationRecord $_.FileType, $_.Extension, $_.Command
-  }
-}
-
-#+END_SRC
-
-Testing is also similar to what's done for shortcuts.
-
-#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
-Describe 'Get-FileTypeAssociationsConfig' {
-  BeforeEach {
-    Initialize-TestEnvironment
-  }
-
-  AfterEach {
-    Restore-StandardEnvironment
-  }
-
-  It 'loads file type association settings' {
-    $Config = Get-FileTypeAssociationsConfig
-
-    $Config | Should -Not -Be $null
-
-    $Config.length | Should -Be 2
-
-    $Config[0].FileType | Should -Be 'Gnu.Emacs.Org'
-    $Config[0].Extension | Should -Be '.org'
-    $Config[0].Command | Should -Be 'emacsclientw.exe -c -a notepad.exe %1'
-
-    $Config[1].FileType | Should -Be 'Gnu.Emacs.ELisp'
-    $Config[1].Extension | Should -Be '.el'
-    $Config[1].Command | Should -Be 'emacsclientw.exe -c -a notepad.exe %1'
-  }
-}
 #+END_SRC
 * Job Management
 Cackledaemon uses [[https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_jobs?view=powershell-5.1][PowerShell jobs]] to run tasks, namely log rotation, in the
@@ -2559,36 +2416,19 @@ At the user level, Explorer manages a bunch of registry settings that encode
 which applications a user has associated with a file type via the "Open With"
 dialogs, as well as what they've picked as the default for opening that file.
 The structure of these registry settings is complicated and research has
-indicated that Microsoft would just as soon not have programs messing with these
-settings.
+indicated that Microsoft generates a cryptographic hash that proves that the
+user edited the association with Windows Explorerand will revert any registry
+changes an external program might make.
 
-However, on the system level, the batch commands [[https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/ftype][ftype]] and [[https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/assoc][assoc]] can be used to
-set file type associations. These associations can be used to set defaults for
-Explore for when a user hasn't interacted with them. ~assoc~ associates an
-extension with a human-readable file type, and ~ftype~ connects that file type
-with a command template.
+On the system level, the batch commands [[https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/ftype][ftype]] and [[https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/assoc][assoc]] can be used to
+set file type associations. However, these settings are ignored by Windows
+Explorer.
 
-This means that while the config for this is managed in
-a single table, Windows actually manages these in two separate collections - one
-for each command. The upshot is that it's possible to have a file type
-registered with ~assoc~ but not in ~ftype~, and vice versa. In practice,
-however, having one of these fields as null isn't very useful, so we don't
-support it.
-
-Additionally, while both of these commands support unsetting a key, we never
-attempt to do any cleanup since it's assumed that an unused association is
-non-harmful, while removing a used association on accident is very bad.
-
-Note that these commands must be ran with Administrator privileges.
-
-#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
-function Install-FileTypeAssociations {
-    Get-FileTypeAssociationsConfig | ForEach-Object {
-        cmd.exe /c ('assoc {0}={1}' -f $_.Extension, $_.FileType) | Out-Null
-        cmd.exe /c ('ftype {0}={1}' -f $_.FileType, $_.Command) | Out-Null
-    }
-}
-
+As such, Cackledaemon makes no attempt to manage file type associations. If you
+want Explorer to open files with Emacs, you need to go into the ~Open with >
+Choose another app~ optio in the context menu, find an Emacs exe or shortcut
+that you want to use, choose it, and select the "Always use this app to open
+files" option.
 #+END_SRC
 ** Ensuring that Emacs is Closed
 The Windows OS will absolutely refuse to move or delete a file that is currently
@@ -2815,10 +2655,6 @@ function Install-Emacs {
             Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Setting app path registry keys...' -PercentComplete 73
             Write-CDInfo 'Setting app path registry keys...'
             Set-EmacsAppPathRegistryKeys | Out-Null
-
-            Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Installing file type associations...' -PercentComplete 81
-            Write-CDInfo 'Installing file type associations...'
-            Install-FileTypeAssociations
 
             Write-CDInfo 'Emacs $TargetVersion is installed and ready to rock!'
         "
