@@ -3356,6 +3356,7 @@ function Invoke-CDApplet {
     (Get-Command 'emacs.exe').Path
   )
   $AppletIcon.Visible = $True
+
 #+END_SRC
 
 When actions triggered inside the applet raise a terminating error, we use a
@@ -3432,12 +3433,12 @@ menu is accessed, the applet refreshes this status throughout the applet.
       }
 
       $LogRotateStatusItem.Text = ('[{0}] Logs Rotation' -f $State)
-      $EnableCDLogRotateJobItem.Enabled = $False
-      $DisableCDLogRotateJobItem.Enabled = $True
+      $EnableLogRotateItem.Enabled = $False
+      $DisableLogRotateItem.Enabled = $True
     } else {
       $LogRotateStatusItem.Text = '[DISABLED] Logs Rotation'
-      $EnableCDLogRotateJobItem.Enabled = $True
-      $DisableCDLogRotateJobItem.Enabled = $False
+      $EnableLogRotateItem.Enabled = $True
+      $DisableLogRotateItem.Enabled = $False
     }
   }
   $AppletIcon.add_MouseDown($OnIconClick)
@@ -3497,7 +3498,7 @@ is right clicked.
     }
   }
   $EnableLogRotateItem.add_Click($OnEnableLogRotateClick)
-  $ContextMenu.MenuItems.Add($EnableCDLogRotateJobItem) | Out-Null
+  $ContextMenu.MenuItems.Add($EnableLogRotateItem) | Out-Null
 
   $DisableLogRotateItem = New-Object System.Windows.Forms.MenuItem
   $DisableLogRotateItem.Text = 'Disable Log Rotation...'
@@ -3507,7 +3508,7 @@ is right clicked.
     }
   }
   $DisableLogRotateItem.add_Click($OnDisableLogRotateClick)
-  $ContextMenu.MenuItems.Add($DisableCDLogRotateJobItem) | Out-Null
+  $ContextMenu.MenuItems.Add($DisableLogRotateItem) | Out-Null
 
   $ContextMenu.MenuItems.Add('-') | Out-Null
 
@@ -3592,7 +3593,6 @@ jobs gracefully, but will then exit either way.
   $ExitItem = New-Object System.Windows.Forms.MenuItem
   $ExitItem.Text = 'Exit'
   $ContextMenu.MenuItems.Add($ExitItem) | Out-Null
-
 
   $OnExit = {
     if (Get-EmacsDaemon) {
@@ -3694,7 +3694,7 @@ or - at your option - any later version.
 @{
   RootModule = 'Cackledaemon.psm1'
 
-  ModuleVersion = '0.0.24'
+  ModuleVersion = '0.0.27'
   GUID = '10d14360-ee5c-4363-bfe8-f4116a8ce764'
 
   Author = 'Josh Holbrook'
