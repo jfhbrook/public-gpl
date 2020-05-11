@@ -3694,7 +3694,7 @@ or - at your option - any later version.
 @{
   RootModule = 'Cackledaemon.psm1'
 
-  ModuleVersion = '0.0.23'
+  ModuleVersion = '0.0.24'
   GUID = '10d14360-ee5c-4363-bfe8-f4116a8ce764'
 
   Author = 'Josh Holbrook'
@@ -3856,11 +3856,12 @@ installer wizard script and a copy of the GNU General Public License.
   )
 
   ModuleList = @('.\Cackledaemon.psm1')
+
 #+END_SRC
 
 The Cackledaemon project is [[https://github.com/jfhbrook/Cackledaemon][hosted on GitHub]].
 
-#+BEGIN_SRC
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psd1
   PrivateData = @{
     PSData = @{
       Tags = @('emacs')
