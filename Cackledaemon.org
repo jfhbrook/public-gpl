@@ -3867,8 +3867,7 @@ The Cackledaemon project is [[https://github.com/jfhbrook/Cackledaemon][hosted o
       Tags = @('emacs')
       LicenseUri = 'https://github.com/jfhbrook/Cackledaemon/blob/master/COPYING'
       ProjectUri = 'https://github.com/jfhbrook/Cackledaemon'
-      # ReleaseNotes of this module
-      # ReleaseNotes = ''
+      ReleaseNotes = 'The ChangeLog for this project may be found at https://github.com/jfhbrook/Cackledaemon/blob/master/Cackledaemon.org#changelog .'
     }
   }
 }
