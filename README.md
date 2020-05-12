@@ -52,7 +52,7 @@ it to run when you log into Windows. You can download and run the latest version
 of this installer by copying and pasting the following snippet into a PowerShell
 window.
 
-    Invoke-Expression (New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/jfhbrook/cackledaemon/master/InstallWizard.ps1')
+    Invoke-Expression (New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/jfhbrook/Cackledaemon/master/InstallWizard.ps1')
 
 You don't need to run this as Administrator - Cackledaemon will install
 itself for your user and will prompt for Administrator access whenever it needs

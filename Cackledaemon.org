@@ -55,7 +55,7 @@ of this installer by copying and pasting the following snippet into a PowerShell
 window.
 
 #+BEGIN_SRC powershell
-Invoke-Expression (New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/jfhbrook/cackledaemon/master/InstallWizard.ps1')
+Invoke-Expression (New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/jfhbrook/Cackledaemon/master/InstallWizard.ps1')
 #+END_SRC
 
 You don't need to run this as Administrator - Cackledaemon will install
