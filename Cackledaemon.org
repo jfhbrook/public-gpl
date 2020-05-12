@@ -1,4 +1,4 @@
-#+TITLE: Cackledaemon - An Emacs Installation and Daemon Manager for Windows
+#+TITLE: Cackledaemon - An Emacs Installation and Runtime Manager for Windows 10
 #+AUTHOR: Josh Holbrook
 #+OPTIONS: tags:nil toc:nil
 
