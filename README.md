@@ -11,7 +11,8 @@ is a humble code editor, but the truth is that Emacs is less a code editor and
 more of a **framework** for **writing text-based applications**. I like to compare
 it to [Node.js](https://nodejs.org) in this regard, which, while really good at being a webserver is
 no [NGINX](https://www.nginx.com/), but instead a runtime where you can import lots of tiny pieces of
-functionality a la carte to make your own webserver. Any one of these
+functionality a la carte to make your own webserver. When Emacs starts it loads
+a configuration from the `~/.emacs.d` directory, and any one of these
 configurations does exactly this - it installs packages from the internet,
 requires them and uses [Emacs Lisp](https://www.gnu.org/software/emacs/manual/html_node/eintr/) to create a complete application. I use a
 third party configuration called [Doom Emacs](https://github.com/hlissner/doom-emacs), which uses a package called [evil](https://github.com/emacs-evil/evil)
@@ -236,6 +237,11 @@ software.
 
 
 # ChangeLog
+
+
+## Git Master
+
+-   Copy edits to the introduction
 
 
 ## 2020-05-11 Release v0.1.0
