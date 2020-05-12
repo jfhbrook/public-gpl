@@ -23,7 +23,7 @@ third party configuration called [[https://github.com/hlissner/doom-emacs][Doom 
 that makes Emacs pretend to be [[https://www.vim.org/][vim]] (my prior code editor of choice). In addition
 to editing code, I also use Emacs for personal task management, using an Emacs
 package called [[https://orgmode.org/][org-mode]] combined with a process somewhere in between [[https://en.wikipedia.org/wiki/Getting_Things_Done][GTD]] and
-[[https://en.wikipedia.org/wiki/Bullet_Journal][bullet jouraling]].
+[[https://en.wikipedia.org/wiki/Bullet_Journal][bullet journaling]].
 
 I also have a lot of computers and I use Emacs on all of them. One of these
 computers happens to run Windows 10 - meaning that I run Emacs on Windows.
