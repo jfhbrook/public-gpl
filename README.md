@@ -6,20 +6,25 @@
 > 
 > &#x2013; Strong Bad
 
-In recent times I've become a big fan of [Emacs](https://www.gnu.org/software/emacs/). On a really surface level Emacs
-is a humble code editor, but the truth is that Emacs is less a code editor and
-more of a **framework** for **writing text-based applications**. I like to compare
-it to [Node.js](https://nodejs.org) in this regard, which, while really good at being a webserver is
-no [NGINX](https://www.nginx.com/), but instead a runtime where you can import lots of tiny pieces of
-functionality a la carte to make your own webserver. When Emacs starts it loads
-a configuration from the `~/.emacs.d` directory, and any one of these
-configurations does exactly this - it installs packages from the internet,
-requires them and uses [Emacs Lisp](https://www.gnu.org/software/emacs/manual/html_node/eintr/) to create a complete application. I use a
-third party configuration called [Doom Emacs](https://github.com/hlissner/doom-emacs), which uses a package called [evil](https://github.com/emacs-evil/evil)
-that makes Emacs pretend to be [vim](https://www.vim.org/) (my prior code editor of choice). In addition
-to editing code, I also use Emacs for personal task management, using an Emacs
-package called [org-mode](https://orgmode.org/) combined with a process somewhere in between [GTD](https://en.wikipedia.org/wiki/Getting_Things_Done) and
-[bullet journaling](https://en.wikipedia.org/wiki/Bullet_Journal).
+In recent times I've become a big fan of [Emacs](https://www.gnu.org/software/emacs/).
+
+On a really surface level Emacs is a humble code editor, but the truth is that
+Emacs is less a code editor and more of a **framework** for **writing text-based
+applications**. I like to compare it to [Node.js](https://nodejs.org) in this regard, which, while
+really good at being a webserver is no [NGINX](https://www.nginx.com/), but instead a runtime where you
+can import lots of tiny pieces of functionality a la carte to make your own
+webserver.
+
+When Emacs starts it loads a configuration from the `~/.emacs.d` directory, and
+any one of these configurations does exactly this - it installs packages from
+the internet, requires them and uses [Emacs Lisp](https://www.gnu.org/software/emacs/manual/html_node/eintr/) to create a complete
+application. I use a third party configuration called [Doom Emacs](https://github.com/hlissner/doom-emacs), which uses a
+package called [evil](https://github.com/emacs-evil/evil) that makes Emacs pretend to be [vim](https://www.vim.org/) (my prior code editor of
+choice).
+
+In addition to editing code, I also use Emacs for personal task management,
+using an Emacs package called [org-mode](https://orgmode.org/) combined with a process somewhere in
+between [GTD](https://en.wikipedia.org/wiki/Getting_Things_Done) and [bullet journaling](https://en.wikipedia.org/wiki/Bullet_Journal).
 
 I also have a lot of computers and I use Emacs on all of them. One of these
 computers happens to run Windows 10 - meaning that I run Emacs on Windows.
