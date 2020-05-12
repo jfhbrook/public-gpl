@@ -28,12 +28,12 @@ I also have a lot of computers and I use Emacs on all of them. One of these
 computers happens to run Windows 10 - meaning that I run Emacs on Windows.
 
 Running Emacs in Windows is a bit of a mess. This is because Emacs was written
-with *nix OS's in mind. This meas that in Linux you can casually install it with
-your package manager and everything Just Works, and that in OSX you can install
-either a [[https://emacsformacosx.com/][universal binary]] or - if you prefer - [[https://brew.sh/][homebrew]], and have a more or less
-seamless process. Windows, meanwhile, doesn't have a nice installer, environment
-configuration is up to interpretation, actually invoking Emacs differs
-significantly, and running Emacs as a daemon becomes difficult.
+with Unix-like systems in mind. This meas that in Linux you can casually install
+it with your package manager and everything Just Works, and that in OSX you can
+install either a [[https://emacsformacosx.com/][universal binary]] or - if you prefer - [[https://brew.sh/][homebrew]], and have a more
+or less seamless process. Windows, meanwhile, doesn't have a nice installer,
+environment configuration is up to interpretation, actually invoking Emacs
+differs significantly, and running Emacs as a daemon becomes difficult.
 
 This project, a [[https://docs.microsoft.com/en-us/powershell/scripting/overview?view=powershell-5.1][PowerShell]] module written as a [[https://en.wikipedia.org/wiki/Literate_programming][literate program]] using [[https://orgmode.org/worg/org-contrib/babel/][org-babel]],
 contains tools for managing Emacs on Windows, namely an **installation setup
@@ -584,7 +584,7 @@ Describe 'Configuration.ps1' {
 The desired state of Start menu shortcuts are stored in a CSV file. This file
 encodes the name of the shortcut, the name of the exe inside of Emacs' ~bin~
 directory, any arguments passed to that exe, and a description field. By
-default, Cackledaemon, creates a shortcut for ~emacsclientw.exe~.
+default, Cackledaemon creates a shortcut for ~emacsclientw.exe~.
 
 #+BEGIN_SRC csv :tangle ./Cackledaemon/Shortcuts.csv
 #TYPE ShortcutCsvRecord
@@ -716,58 +716,59 @@ function Enable-Job {
 
 #+END_SRC
 
-Tests ensure that running ~Enable-Job~ won't create two jobs, istnead stopping
+Tests ensure that running ~Enable-Job~ won't create two jobs, instead stopping
 and removing the current job before creating the new one.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
 Describe "Enable-Job" {
-    BeforeEach {
-        Initialize-TestEnvironment
+  BeforeEach {
+    Initialize-TestEnvironment
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  Context "when a job doesn't exist" {
+    It "creates a new job" {
+      Stop-Job -Name 'testJob' -ErrorAction SilentlyContinue
+      Remove-Job -Name 'testJob' -ErrorAction SilentlyContinue
+
+      Enable-Job "testJob" {} -ErrorAction Stop
+
+      $Job = Get-Job -Name 'testJob'
+      $Job | Should -Not -Be $null
+
+      Stop-Job -Id $Job.Id
+      Remove-Job -Id $Job.Id
     }
+  }
 
-    AfterEach {
-        Restore-StandardEnvironment
+  Context "when a job already exists" {
+    It 'disables and then creates a new job' {
+      Stop-Job -Name 'testJob' -ErrorAction SilentlyContinue
+      Remove-Job -Name 'testJob' -ErrorAction SilentlyContinue
+
+      Start-Job -Name 'testJob' -ScriptBlock {}
+
+      Enable-Job "testJob" {} -ErrorAction Stop -WarningVariable Warnings 3> $null
+
+      $Warnings | Should -Not -Be $null
+      $Warnings.Count | Should -Be 1
+
+      $Warnings[0].ToString() | Should -Be "testJob job already exists. Trying to stop and remove..."
+
+      $Job = Get-Job -Name 'testJob'
+
+      $Job | Should -Not -Be $null
+      $Job.length | Should -Be 1
+
+      Stop-Job -Id $Job.Id
+      Remove-Job -Id $Job.Id
     }
-
-    Context "when a job doesn't exist" {
-        It "creates a new job" {
-            Stop-Job -Name 'testJob' -ErrorAction SilentlyContinue
-            Remove-Job -Name 'testJob' -ErrorAction SilentlyContinue
-
-            Enable-Job "testJob" {} -ErrorAction Stop
-
-            $Job = Get-Job -Name 'testJob'
-            $Job | Should -Not -Be $null
-
-            Stop-Job -Id $Job.Id
-            Remove-Job -Id $Job.Id
-        }
-    }
-
-    Context "when a job already exists" {
-        It 'disables and then creates a new job' {
-            Stop-Job -Name 'testJob' -ErrorAction SilentlyContinue
-            Remove-Job -Name 'testJob' -ErrorAction SilentlyContinue
-
-            Start-Job -Name 'testJob' -ScriptBlock {}
-
-            Enable-Job "testJob" {} -ErrorAction Stop -WarningVariable Warnings 3> $null
-
-            $Warnings | Should -Not -Be $null
-            $Warnings.Count | Should -Be 1
-
-            $Warnings[0].ToString() | Should -Be "testJob job already exists. Trying to stop and remove..."
-
-            $Job = Get-Job -Name 'testJob'
-
-            $Job | Should -Not -Be $null
-            $Job.length | Should -Be 1
-
-            Stop-Job -Id $Job.Id
-            Remove-Job -Id $Job.Id
-        }
-    }
+  }
 }
+
 #+END_SRC
 
 ~Disable-Job~ is a wrapper around ~Stop-Job~ and ~Remove-Job~ - after a job is
@@ -969,7 +970,7 @@ Describe 'Write-CDLog' {
 
 The logger has five levels: debug, info, warning, error and fatal. All of these
 will write to the log - however, the first four will log to the Debug,
-Information, Warning and Error streams respectively, and he last will throw a
+Information, Warning and Error streams respectively, and the last will throw a
 [[https://docs.microsoft.com/en-us/powershell/scripting/developer/cmdlet/terminating-errors?view=powershell-5.1][terminating error]].
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
@@ -1215,7 +1216,7 @@ Describe 'Invoke-LogRotate' {
 
 #+END_SRC
 
-Cackledaemon uses PowerShell jobs to manage log rotation. By default, the job
+Cackledaemon uses PowerShell jobs to manage log rotation. By default the job
 checks the logs every 60 seconds, but this is configurable inside the
 ~Configuration.ps1~.
 
@@ -1247,8 +1248,8 @@ function Disable-CDLogRotateJob {
 ** Gotchas and Caveats
 On a certain level, installing Emacs is a matter of downloading an official zip
 file and unpacking it into the system's ~Program Files~ directory. Beyond that,
-we can register executables with Windows, set some environment variables,
-populate the Start menu, and configure file type associations.
+we can register executables with Windows, set some environment variables and
+populate the Start menu.
 
 Emacs is fundamentally designed to run on Unix-like systems, meaning that
 sometimes the way Windows works violates Emacs' base expectations. This
@@ -2143,7 +2144,7 @@ idempotent and do nothing.
 In the case when an unmanaged Emacs install is in the user's path, Cackledaemon
 will add the managed Emacs install to the path, but will also warn that there's
 a second Emacs in the path. Cackledaemon sets its Emacs as lower priority than
-the existing Emacs, meaning that if the user wants emacs binaries to resolve to
+the existing Emacs, meaning that if the user wants Emacs binaries to resolve to
 the Cackledaemon installed ones they will need to manually intervene.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
@@ -2663,7 +2664,7 @@ After Emacs is updated, sometimes bytecode needs to be recompiled. This is going
 to be a process specific to your Emacs config. Cackledaemon supports running
 post-install hooks to support these cases.
 
-For example, if you're using Doom Emacs, you might add this to your ~Configuration.ps1~::
+For example, if you're using Doom Emacs, you might add this to your ~Configuration.ps1~:
 
 #+BEGIN_SRC powershell
 $PostInstallHook = { doom build }
@@ -2868,19 +2869,19 @@ Luckily for us, Emacs can be ran [[https://www.emacswiki.org/emacs/EmacsAsDaemon
 typically ~emacsclient~. In Linux and [[https://www.freedesktop.org/wiki/Software/systemd/][systemd]] this works seamlessly - often you
 can run =systemctl start --user emacs= and be off to the races.
 
-In Windows it's a bit more of a mess. This is because the Windows abstractions
+In Windows it's less straightforwad. This is because the Windows abstractions
 for processes and services are wildly divergent from those in nix-like
-environments such as Linux and OSX. Init systems like systemd run and manage
-normal process, meanwhile in Windows services are in fact [[https://docs.microsoft.com/en-us/dotnet/framework/windows-services/walkthrough-creating-a-windows-service-application-in-the-component-designer][special programs]] that
-[[https://docs.microsoft.com/en-us/dotnet/api/system.serviceprocess?view=netframework-4.8][expose an alternate interface]] to that of the standard process. The upshot is
-that any standard process that one wants to run as a Windows service needs to be
-wrapped in one of these special programs, complete with bespoke abstractions for
-process management, log management and so on.
+environments such as Linux. Init systems like systemd run and manage normal
+process; meanwhile in Windows services are in fact [[https://docs.microsoft.com/en-us/dotnet/framework/windows-services/walkthrough-creating-a-windows-service-application-in-the-component-designer][special programs]] that [[https://docs.microsoft.com/en-us/dotnet/api/system.serviceprocess?view=netframework-4.8][expose
+an alternate interface]] to that of the standard process. The upshot is that any
+standard process that one wants to run as a Windows service needs to be wrapped
+in one of these special programs, complete with bespoke abstractions for process
+management, log management and so on.
 
 Alternately, arbitrary processes may be [[https://support.microsoft.com/en-us/help/4026268/windows-10-change-startup-apps][configured to start on user login]].
 Practically speaking, this is how most persistent applications are ran in
 Windows, and in fact the [[https://www.emacswiki.org/emacs/EmacsMsWindowsIntegration#toc8][approach documented in the wiki]] does exactly this - it
-uses a Powershell script to generate a very simple [[https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/windows-commands][batch file]] that cleans up
+uses a PowerShell script to generate a very simple [[https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/windows-commands][batch file]] that cleans up
 server state from the prior run and then spawns the Emacs daemon.
 
 This works OK. However, there are some downsides. if the Emacs daemon crashes
@@ -3058,9 +3059,9 @@ function Get-UnmanagedEmacsDaemon {
 This function launches the Emacs daemon (if it's not running already) with
 sensible parameters and stores process info so we can do basic monitoring.
 
-Starting the Emacs daemon is a matter of calling [[https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.management/start-process?view=powershell-5.1][Start-Process]]. Emacs is
-configured to run in the background and redirect stdio to log files in
-Cackledaemon's working directory.
+We can start the Emacs daemon by calling [[https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.management/start-process?view=powershell-5.1][Start-Process]]. Emacs is configured to
+run in the background and redirect stdio to log files in Cackledaemon's working
+directory.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Start-EmacsDaemon {
@@ -3236,8 +3237,8 @@ function Get-EmacsDaemon {
 
 #+END_SRC
 ** Stop the Emacs Daemon
-Stopping the process is simply a matter of retrieving the process state from
-the PID file and attempting to stop the process with [[https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.management/stop-process?view=powershell-5.1][Stop-Process]].
+To stop the Emacs daemon, we need to retrieve the process state from the PID
+file and attempt to stop the process with [[https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.management/stop-process?view=powershell-5.1][Stop-Process]].
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Stop-EmacsDaemon {
@@ -3550,8 +3551,8 @@ wizard inside of a new PowerShell process.
 
 #+END_SRC
 
-Cackledaemon leverages Start-Process's behavior for non-executable arguments,
-whic is to use the associated application to open the item. In the case of
+Cackledaemon leverages ~Start-Process~'s behavior for non-executable arguments,
+which is to use the associated application to open the item. In the case of
 opening the working directory this is very likely Windows Explorer. In the case
 of the ~Configuration.ps1~ file, this depends on how Windows is configured. By
 default it is likely the [[https://docs.microsoft.com/en-us/powershell/scripting/components/ise/introducing-the-windows-powershell-ise?view=powershell-5.1][PowerShell ISE]], but it will use whichever application
@@ -3628,7 +3629,7 @@ jobs gracefully, but will then exit either way.
 
 #+END_SRC
 
-After all of the menu items ad callbacks are configured, the icon is started by
+After all of the menu items and callbacks are configured, the icon is started by
 calling the ~ShowDialog~ method on the parent form. This blocks until the icon
 exits.
 
@@ -3642,7 +3643,7 @@ exits.
 The icon can be launched by running ~Invoke-CDApplet~ in a PowerShell terminal,
 but Cackledaemon includes a dedicated launcher that uses VBScript and the
 Windows Script Host to launch PowerShell in the background [[https://www.faqforge.com/windows/how-to-execute-powershell-scripts-without-pop-up-window/][without creating a
-new window]] .
+new window]].
 
 #+BEGIN_SRC vbscript :tangle ./Cackledaemon/Applet.vbs :noweb yes
 <<vbscript-license-header>>
