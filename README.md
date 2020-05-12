@@ -20,7 +20,9 @@ any one of these configurations does exactly this - it installs packages from
 the internet, requires them and uses [Emacs Lisp](https://www.gnu.org/software/emacs/manual/html_node/eintr/) to create a complete
 application. I use a third party configuration called [Doom Emacs](https://github.com/hlissner/doom-emacs), which uses a
 package called [evil](https://github.com/emacs-evil/evil) that makes Emacs pretend to be [vim](https://www.vim.org/) (my prior code editor of
-choice).
+choice). Another popular vim-y distribution that I've used successfully in the
+past is called [spacemacs](https://www.spacemacs.org/). Other distributions, including ones that **don't**
+pretend to be vim, can be found in this [Awesome Emacs list of starter kits](https://github.com/emacs-tw/awesome-emacs#starter-kit).
 
 In addition to editing code, I also use Emacs for personal task management,
 using an Emacs package called [org-mode](https://orgmode.org/) combined with a process somewhere in
