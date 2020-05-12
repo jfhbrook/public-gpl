@@ -36,7 +36,7 @@ contains tools for managing Emacs on Windows, namely an ****installation setup
 wizard**** and a ****tray icon for managing the Emacs daemon****.
 
 
-## Getting Started
+# Getting Started
 
 Cackledaemon includes an installation wizard that will install the Cackledaemon
 module off [the PowerShell Gallery](https://www.powershellgallery.com/packages/Cackledaemon) and then walk the user through installing
@@ -52,14 +52,14 @@ itself for your user and will prompt for Administrator access whenever it needs
 to install Emacs system-wide.
 
 
-## Learning More
+# Learning More
 
 The [source code for Cackledaemon](https://github.com/jfhbrook/cackledaemon/blob/master/Cackledaemon.org), a literate program with prose and source code
 intermixed, should be readable from top to bottom and contains all the
 information someone would need to use it effectively.
 
 
-## Building Cackledaemon
+# Building Cackledaemon
 
 This project uses [Invoke-Build](https://github.com/nightroman/Invoke-Build) to manage its tasks. Running `Invoke-Build` by
 default will clean up old files, run the build and run tests.
@@ -138,7 +138,7 @@ export the README.
       (message "Done."))
 
 
-## Testing Cackledaemon
+# Testing Cackledaemon
 
 Cackledaemon's tests use the [Pester test framework](https://pester.dev/). Each test runs in a test environment
 that sets up an isolated environment that writes files to a [test drive](https://pester.dev/docs/usage/testdrive).
@@ -211,7 +211,7 @@ environment isn't inadvertently modified by the tests.
     }
 
 
-## Licensing
+# Licensing
 
 Cackledaemon is 100% definitely not a part of GNU Emacs, but **is** similarly free
 software.
@@ -257,7 +257,4 @@ software.
 ## 2020-05-11 Release v0.1.0
 
 -   The first feature-complete release of Cackledaemon.
-
-
-# Licensing
 
