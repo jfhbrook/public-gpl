@@ -36,7 +36,7 @@ contains tools for managing Emacs on Windows, namely an ****installation setup
 wizard**** and a ****tray icon for managing the Emacs daemon****.
 
 
-# Getting Started
+## Getting Started
 
 Cackledaemon includes an installation wizard that will install the Cackledaemon
 module off [the PowerShell Gallery](https://www.powershellgallery.com/packages/Cackledaemon) and then walk the user through installing
@@ -52,11 +52,34 @@ itself for your user and will prompt for Administrator access whenever it needs
 to install Emacs system-wide.
 
 
-# Learning More
+## Learning More
 
 The [source code for Cackledaemon](https://github.com/jfhbrook/cackledaemon/blob/master/Cackledaemon.org), a literate program with prose and source code
 intermixed, should be readable from top to bottom and contains all the
 information someone would need to use it effectively.
+
+
+## Licensing
+
+Cackledaemon is 100% definitely not a part of GNU Emacs, but **is** similarly free
+software.
+
+    # Copyright 2020 Josh Holbrook
+    #
+    # This file is part of Cackledaemon and 100% definitely not a part of Emacs.
+    #
+    # Cackledaemon is free software: you can redistribute it and/or modify
+    # it under the terms of the GNU General Public License as published by
+    # the Free Software Foundation, either version 3 of the License, or
+    # (at your option) any later version.
+    #
+    # Cackledaemon is distributed in the hope that it will be useful,
+    # but WITHOUT ANY WARRANTY; without even the implied warranty of
+    # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    # GNU General Public License for more details.
+    #
+    # You should have received a copy of the GNU General Public License
+    # along with Cackledaemon.  if not, see <https://www.gnu.org/licenses/>.
 
 
 # Building Cackledaemon
@@ -210,46 +233,6 @@ environment isn't inadvertently modified by the tests.
     task Test {
       powershell -Command Invoke-Pester
     }
-
-
-# Licensing
-
-Cackledaemon is 100% definitely not a part of GNU Emacs, but **is** similarly free
-software.
-
-    # Copyright 2020 Josh Holbrook
-    #
-    # This file is part of Cackledaemon and 100% definitely not a part of Emacs.
-    #
-    # Cackledaemon is free software: you can redistribute it and/or modify
-    # it under the terms of the GNU General Public License as published by
-    # the Free Software Foundation, either version 3 of the License, or
-    # (at your option) any later version.
-    #
-    # Cackledaemon is distributed in the hope that it will be useful,
-    # but WITHOUT ANY WARRANTY; without even the implied warranty of
-    # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    # GNU General Public License for more details.
-    #
-    # You should have received a copy of the GNU General Public License
-    # along with Cackledaemon.  if not, see <https://www.gnu.org/licenses/>.
-
-    # Copyright 2020 Josh Holbrook
-    #
-    # This file is part of Cackledaemon and 100% definitely not a part of Emacs.
-    #
-    # Cackledaemon is free software: you can redistribute it and/or modify
-    # it under the terms of the GNU General Public License as published by
-    # the Free Software Foundation, either version 3 of the License, or
-    # (at your option) any later version.
-    #
-    # Cackledaemon is distributed in the hope that it will be useful,
-    # but WITHOUT ANY WARRANTY; without even the implied warranty of
-    # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    # GNU General Public License for more details.
-    #
-    # You should have received a copy of the GNU General Public License
-    # along with Cackledaemon.  if not, see <https://www.gnu.org/licenses/>.
 
 
 # ChangeLog
