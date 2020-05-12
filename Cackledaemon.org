@@ -3709,7 +3709,7 @@ or - at your option - any later version.
 @{
   RootModule = 'Cackledaemon.psm1'
 
-  ModuleVersion = '0.0.27'
+  ModuleVersion = '0.1.0'
 
   GUID = '10d14360-ee5c-4363-bfe8-f4116a8ce764'
 
