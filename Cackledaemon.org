@@ -39,7 +39,7 @@ This project, a [[https://docs.microsoft.com/en-us/powershell/scripting/overview
 contains tools for managing Emacs on Windows, namely an **installation setup
 wizard** and a **tray icon for managing the Emacs daemon**.
 
-** Getting Started :export:
+* Getting Started :export:
 Cackledaemon includes an installation wizard that will install the Cackledaemon
 module off [[https://www.powershellgallery.com/packages/Cackledaemon][the PowerShell Gallery]] and then walk the user through installing
 Emacs, setting up their environment, and installing the tray icon, configuring
@@ -54,18 +54,10 @@ Invoke-Expression (New-Object System.Net.WebClient).DownloadString('https://raw.
 You don't need to run this as Administrator - Cackledaemon will install
 itself for your user and will prompt for Administrator access whenever it needs
 to install Emacs system-wide.
-** Learning More :export:
+* Learning More :export:
 The [[https://github.com/jfhbrook/cackledaemon/blob/master/Cackledaemon.org][source code for Cackledaemon]], a literate program with prose and source code
 intermixed, should be readable from top to bottom and contains all the
 information someone would need to use it effectively.
-** Licensing :export:
-Cackledaemon is 100% definitely not a part of GNU Emacs, but *is* similarly free
-software.
-
-#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1 :noweb yes
-<<license-header>>
-
-#+END_SRC
 * Building Cackledaemon :export:
 This project uses [[https://github.com/nightroman/Invoke-Build][Invoke-Build]] to manage its tasks. Running ~Invoke-Build~ by
 default will clean up old files, run the build and run tests.
@@ -185,6 +177,14 @@ environment isn't inadvertently modified by the tests.
 task Test {
   powershell -Command Invoke-Pester
 }
+
+#+END_SRC
+* Licensing :export:
+Cackledaemon is 100% definitely not a part of GNU Emacs, but *is* similarly free
+software.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1 :noweb yes
+<<license-header>>
 
 #+END_SRC
 * Installing Cackledaemon
