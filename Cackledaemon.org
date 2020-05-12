@@ -28,10 +28,9 @@ choice).
 
 In addition to editing code, I also use Emacs for personal task management,
 using an Emacs package called [[https://orgmode.org/][org-mode]] combined with a process somewhere in
-between [[https://en.wikipedia.org/wiki/Getting_Things_Done][GTD]] and [[https://en.wikipedia.org/wiki/Bullet_Journal][bullet journaling]].
-
-I also have a lot of computers and I use Emacs on all of them. One of these
-computers happens to run Windows 10 - meaning that I run Emacs on Windows.
+between [[https://en.wikipedia.org/wiki/Getting_Things_Done][GTD]] and [[https://en.wikipedia.org/wiki/Bullet_Journal][bullet journaling]]. I also have a lot of computers and I use
+Emacs on all of them. One of these computers happens to run Windows 10 - meaning
+that I run Emacs on Windows.
 
 Running Emacs in Windows is a bit of a mess. This is because Emacs was written
 with Unix-like systems in mind. That means that in Linux you can casually
