@@ -29,12 +29,12 @@ I also have a lot of computers and I use Emacs on all of them. One of these
 computers happens to run Windows 10 - meaning that I run Emacs on Windows.
 
 Running Emacs in Windows is a bit of a mess. This is because Emacs was written
-with Unix-like systems in mind. This meas that in Linux you can casually install
-it with your package manager and everything Just Works, and that in OSX you can
-install either a [[https://emacsformacosx.com/][universal binary]] or - if you prefer - [[https://brew.sh/][homebrew]], and have a more
-or less seamless process. Windows, meanwhile, doesn't have a nice installer,
-environment configuration is up to interpretation, actually invoking Emacs
-differs significantly, and running Emacs as a daemon becomes difficult.
+with Unix-like systems in mind. That means that in Linux you can casually
+install it with your package manager and everything Just Works, and that in OSX
+you can install either a [[https://emacsformacosx.com/][universal binary]] or - if you prefer - [[https://brew.sh/][homebrew]], and
+have a more or less seamless process. Windows, meanwhile, doesn't have a nice
+installer, environment configuration is up to interpretation, actually invoking
+Emacs differs significantly, and running Emacs as a daemon becomes difficult.
 
 This project, a [[https://docs.microsoft.com/en-us/powershell/scripting/overview?view=powershell-5.1][PowerShell]] module written as a [[https://en.wikipedia.org/wiki/Literate_programming][literate program]] using [[https://orgmode.org/worg/org-contrib/babel/][org-babel]],
 contains tools for managing Emacs on Windows, namely an **installation setup
