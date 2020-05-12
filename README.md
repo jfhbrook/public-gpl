@@ -213,6 +213,17 @@ environment isn't inadvertently modified by the tests.
     }
 
 
+# Contributing
+
+I would be stoked if people contributed to Cackledaemon!
+
+Cackledaemon has a [GitHub issues tracker](https://github.com/jfhbrook/Cackledaemon/issues) which contains the handful of known
+issues with the code. Feel free to make new issues, or send me a [pull request](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/about-pull-requests).
+One small note: By contributing code you will be assigning the copyright of that
+code to me. I've dealt with shared copyright in that past, and thanks but no
+thanks.
+
+
 # Licensing
 
 Cackledaemon is 100% definitely not a part of GNU Emacs, but **is** similarly free
@@ -242,6 +253,7 @@ software.
 ## Git Master
 
 -   Copy edits to the introduction
+-   Notes on contributing
 
 
 ## 2020-05-11 Release v0.1.0
