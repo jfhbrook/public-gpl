@@ -48,7 +48,7 @@ of this installer by copying and pasting the following snippet into a PowerShell
 window.
 
 #+BEGIN_SRC powershell
-Invoke-Expression (New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/jfhbrook/cackledaemon/master/Cackledaemon/InstallWizard.ps1')
+Invoke-Expression (New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/jfhbrook/cackledaemon/master/InstallWizard.ps1')
 #+END_SRC
 
 You don't need to run this as Administrator - Cackledaemon will install
@@ -90,7 +90,8 @@ The build itself can be started in isolation by running ~Invoke-Build Build~.
 #+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
 task Build {
   emacs.exe --batch --load build.el
-  Copy-Item 'COPYING' .\Cackledaemon\COPYING -ErrorAction 'SilentlyContinue'
+  Copy-Item COPYING .\Cackledaemon\COPYING -ErrorAction 'SilentlyContinue'
+  Copy-Item InstallWizard.ps1 .\Cackledaemon\InstallWizard.ps1 -ErrorAction 'SilentlyContinue'
   Remove-Item 'README.md~' -ErrorAction 'SilentlyContinue'
 }
 
