@@ -3727,7 +3727,7 @@ or - at your option - any later version.
 @{
   RootModule = 'Cackledaemon.psm1'
 
-  ModuleVersion = '0.1.0'
+  ModuleVersion = '0.1.1'
 
   GUID = '10d14360-ee5c-4363-bfe8-f4116a8ce764'
 
@@ -3924,11 +3924,13 @@ task Publish Build, Test, {
 #+END_SRC
 
 * ChangeLog :export:
-** Git Master
+** 2020-05-11 Release v0.1.1
 - Copy edits to the introduction
+- A link to the release announcement blog post
+- An update to the copy-paste install snippet to capitalize Cackledaemon
 - Notes on contributing
 ** 2020-05-11 Release v0.1.0
-- The first feature-complete release of Cackledaemon.
+- The first feature-complete release of Cackledaemon!
 * License Headers
 #+NAME: license-header
 #+BEGIN_SRC powershell

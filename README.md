@@ -259,13 +259,15 @@ software.
 # ChangeLog
 
 
-## Git Master
+## 2020-05-11 Release v0.1.1
 
 -   Copy edits to the introduction
+-   A link to the release announcement blog post
+-   An update to the copy-paste install snippet to capitalize Cackledaemon
 -   Notes on contributing
 
 
 ## 2020-05-11 Release v0.1.0
 
--   The first feature-complete release of Cackledaemon.
+-   The first feature-complete release of Cackledaemon!
 
