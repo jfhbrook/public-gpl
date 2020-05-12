@@ -64,6 +64,23 @@ information someone would need to use it effectively.
 This project uses [Invoke-Build](https://github.com/nightroman/Invoke-Build) to manage its tasks. Running `Invoke-Build` by
 default will clean up old files, run the build and run tests.
 
+    # Copyright 2020 Josh Holbrook
+    #
+    # This file is part of Cackledaemon and 100% definitely not a part of Emacs.
+    #
+    # Cackledaemon is free software: you can redistribute it and/or modify
+    # it under the terms of the GNU General Public License as published by
+    # the Free Software Foundation, either version 3 of the License, or
+    # (at your option) any later version.
+    #
+    # Cackledaemon is distributed in the hope that it will be useful,
+    # but WITHOUT ANY WARRANTY; without even the implied warranty of
+    # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    # GNU General Public License for more details.
+    #
+    # You should have received a copy of the GNU General Public License
+    # along with Cackledaemon.  if not, see <https://www.gnu.org/licenses/>.
+    
     task . Clean, Build, Test
 
 Before running the build, it's a good idea to use `Remove-Item` to clean up old
@@ -92,6 +109,22 @@ module using `org-babel` and export the README. Alternately, you may type `C-c
 C-v t` with this file open in Emacs to tangle it and use `org-export-to-file` to
 export the README.
 
+    ;; Copyright 2020 Josh Holbrook
+    ;;
+    ;; This file is part of Cackledaemon and 100% definitely not a part of Emacs.
+    ;; Cackledaemon is free software: you can redistribute it and/or modify
+    ;; it under the terms of the GNU General Public License as published by
+    ;; the Free Software Foundation, either version 3 of the License, or
+    ;; (at your option) any later version.
+    ;;
+    ;; Cackledaemon is distributed in the hope that it will be useful,
+    ;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+    ;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    ;; GNU General Public License for more details.
+    ;;
+    ;; You should have received a copy of the GNU General Public License
+    ;; along with Cackledaemon.  if not, see <https://www.gnu.org/licenses/>.
+    
     (progn
       (require 'org)
       (require 'ob-tangle)
@@ -110,6 +143,23 @@ export the README.
 Cackledaemon's tests use the [Pester test framework](https://pester.dev/). Each test runs in a test environment
 that sets up an isolated environment that writes files to a [test drive](https://pester.dev/docs/usage/testdrive).
 
+    # Copyright 2020 Josh Holbrook
+    #
+    # This file is part of Cackledaemon and 100% definitely not a part of Emacs.
+    #
+    # Cackledaemon is free software: you can redistribute it and/or modify
+    # it under the terms of the GNU General Public License as published by
+    # the Free Software Foundation, either version 3 of the License, or
+    # (at your option) any later version.
+    #
+    # Cackledaemon is distributed in the hope that it will be useful,
+    # but WITHOUT ANY WARRANTY; without even the implied warranty of
+    # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    # GNU General Public License for more details.
+    #
+    # You should have received a copy of the GNU General Public License
+    # along with Cackledaemon.  if not, see <https://www.gnu.org/licenses/>.
+    
     function Initialize-TestEnvironment {
       $Global:OriginalAppData = $Env:AppData
       $Global:OriginalProgramFiles = $Env:ProgramFiles
@@ -163,25 +213,12 @@ environment isn't inadvertently modified by the tests.
 
 ## Licensing
 
-Cackledaemon is absolutely 100% not a part of GNU Emacs, but **is** similarly
-licensed under a GPLv3+ license. This means that Cackledaemon is free software,
-as defined by the Free Software Foundation. See the COPYING file for more
-details.
-
-
-# ChangeLog
-
-
-## 2020-05-11 Release v0.1.0
-
--   The first feature-complete release of Cackledaemon.
-
-
-# Licensing
+Cackledaemon is 100% definitely not a part of GNU Emacs, but **is** similarly free
+software.
 
     # Copyright 2020 Josh Holbrook
     #
-    # This file is part of Cackledaemon and not a part of Emacs.
+    # This file is part of Cackledaemon and 100% definitely not a part of Emacs.
     #
     # Cackledaemon is free software: you can redistribute it and/or modify
     # it under the terms of the GNU General Public License as published by
@@ -195,4 +232,32 @@ details.
     #
     # You should have received a copy of the GNU General Public License
     # along with Cackledaemon.  if not, see <https://www.gnu.org/licenses/>.
+
+    # Copyright 2020 Josh Holbrook
+    #
+    # This file is part of Cackledaemon and 100% definitely not a part of Emacs.
+    #
+    # Cackledaemon is free software: you can redistribute it and/or modify
+    # it under the terms of the GNU General Public License as published by
+    # the Free Software Foundation, either version 3 of the License, or
+    # (at your option) any later version.
+    #
+    # Cackledaemon is distributed in the hope that it will be useful,
+    # but WITHOUT ANY WARRANTY; without even the implied warranty of
+    # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    # GNU General Public License for more details.
+    #
+    # You should have received a copy of the GNU General Public License
+    # along with Cackledaemon.  if not, see <https://www.gnu.org/licenses/>.
+
+
+# ChangeLog
+
+
+## 2020-05-11 Release v0.1.0
+
+-   The first feature-complete release of Cackledaemon.
+
+
+# Licensing
 
