@@ -42,6 +42,9 @@ This project, a [PowerShell](https://docs.microsoft.com/en-us/powershell/scripti
 contains tools for managing Emacs on Windows, namely an ****installation setup
 wizard**** and a ****tray icon for managing the Emacs daemon****.
 
+For more information, check out [this blog post I wrote on dev.to](https://dev.to/jfhbrook/introducing-cackledaemon-2dek) that has some
+screenshots and a project postmortem.
+
 
 # Getting Started
 

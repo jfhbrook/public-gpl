@@ -46,6 +46,9 @@ This project, a [[https://docs.microsoft.com/en-us/powershell/scripting/overview
 contains tools for managing Emacs on Windows, namely an **installation setup
 wizard** and a **tray icon for managing the Emacs daemon**.
 
+For more information, check out [[https://dev.to/jfhbrook/introducing-cackledaemon-2dek][this blog post I wrote on dev.to]] that has some
+screenshots and a project postmortem.
+
 * Getting Started :export:
 Cackledaemon includes an installation wizard that will install the Cackledaemon
 module off [[https://www.powershellgallery.com/packages/Cackledaemon][the PowerShell Gallery]] and then walk the user through installing
