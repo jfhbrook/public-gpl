@@ -186,6 +186,7 @@ environment isn't inadvertently modified by the tests.
 #+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
 task Test {
   powershell -Command Invoke-Pester
+  Test-ModuleManifest .\Cackledaemon\Cackledaemon.psd1
 }
 
 #+END_SRC
@@ -3754,7 +3755,9 @@ applet. Powershell Core may work with some effort, but is currently unsupported.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psd1
   PowerShellVersion = '5.1'
-  RequiredModules = @('PSeudo')
+  RequiredModules = @(
+    @{ModuleName='PSeudo'; ModuleVersion='1.0'}
+  )
   RequiredAssemblies = @('System.Windows.Forms')
 
 #+END_SRC
@@ -3926,6 +3929,7 @@ task Publish Build, Test, {
 * ChangeLog :export:
 ** Master
 - ~Get-Command~ call in install wizard is now silent when Emacs isn't installed
+- Ensure PSeudo is at least version 1.0 in manifest
 ** 2020-05-11 Release v0.1.1
 - Copy edits to the introduction
 - A link to the release announcement blog post

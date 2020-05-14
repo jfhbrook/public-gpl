@@ -219,6 +219,7 @@ environment isn't inadvertently modified by the tests.
 
     task Test {
       powershell -Command Invoke-Pester
+      Test-ModuleManifest .\Cackledaemon\Cackledaemon.psd1
     }
 
 
@@ -262,6 +263,7 @@ software.
 ## Master
 
 -   `Get-Command` call in install wizard is now silent when Emacs isn't installed
+-   Ensure PSeudo is at least version 1.0 in manifest
 
 
 ## 2020-05-11 Release v0.1.1
