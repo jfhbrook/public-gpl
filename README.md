@@ -265,7 +265,7 @@ software.
 # ChangeLog
 
 
-## Master
+## 2020-05-14 Release v0.1.3
 
 -   Quote module path to support paths with spaces in them
 
