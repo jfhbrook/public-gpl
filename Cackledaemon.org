@@ -2826,7 +2826,7 @@ function Install-Emacs {
     Invoke-AsAdministrator "
       `$ErrorActionPreference = 'Stop'
 
-      Import-Module $ModulePath
+      Import-Module `"$ModulePath`"
 
       Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Updating Emacs...' -PercentComplete 63
       Write-CDInfo 'Updating Emacs...'
@@ -3930,6 +3930,8 @@ task Publish Build, Test, {
 #+END_SRC
 
 * ChangeLog :export:
+** Master
+- Quote module path to support paths with spaces in them
 ** 2020-05-14 Release v0.1.2
 - ~Get-Command~ call in install wizard is now silent when Emacs isn't installed
 - Ensure PSeudo is at least version 1.0 in manifest

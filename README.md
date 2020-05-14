@@ -265,6 +265,11 @@ software.
 # ChangeLog
 
 
+## Master
+
+-   Quote module path to support paths with spaces in them
+
+
 ## 2020-05-14 Release v0.1.2
 
 -   `Get-Command` call in install wizard is now silent when Emacs isn't installed
