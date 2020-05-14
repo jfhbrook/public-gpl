@@ -259,6 +259,11 @@ software.
 # ChangeLog
 
 
+## Master
+
+-   `Get-Command` call in install wizard is now silent when Emacs isn't installed
+
+
 ## 2020-05-11 Release v0.1.1
 
 -   Copy edits to the introduction

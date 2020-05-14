@@ -360,7 +360,7 @@ will prompt for these elevated privileges when necessary.
 Write-Host "Checking the state of Emacs..."
 Write-Host ''
 
-$EmacsCommand = Get-Command 'emacs.exe'
+$EmacsCommand = Get-Command 'emacs.exe' -ErrorAction 'silentlyContinue'
 
 if ($EmacsCommand) {
   if (Test-EmacsExe -ErrorAction Stop) {
@@ -3924,6 +3924,8 @@ task Publish Build, Test, {
 #+END_SRC
 
 * ChangeLog :export:
+** Master
+- ~Get-Command~ call in install wizard is now silent when Emacs isn't installed
 ** 2020-05-11 Release v0.1.1
 - Copy edits to the introduction
 - A link to the release announcement blog post

@@ -128,7 +128,7 @@ if (Test-Path $CackledaemonWD) {
 Write-Host "Checking the state of Emacs..."
 Write-Host ''
 
-$EmacsCommand = Get-Command 'emacs.exe'
+$EmacsCommand = Get-Command 'emacs.exe' -ErrorAction 'silentlyContinue'
 
 if ($EmacsCommand) {
   if (Test-EmacsExe -ErrorAction Stop) {
