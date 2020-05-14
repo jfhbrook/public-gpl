@@ -75,12 +75,15 @@ intermixed, should be readable from top to bottom and contains all the
 information someone would need to use it effectively.
 * Building Cackledaemon :export:
 This project uses [[https://github.com/nightroman/Invoke-Build][Invoke-Build]] to manage its tasks. Running ~Invoke-Build~ by
-default will clean up old files, run the build and run tests.
+default will clean up old files, run the build and run linting and tests.
 
 #+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1 :noweb yes
 <<license-header>>
 
-task . Clean, Build, Test
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingCmdletAliases','')]
+param()
+
+task . Clean, Build, Lint, Test
 
 #+END_SRC
 
@@ -133,14 +136,20 @@ export the README.
   (message "Done."))
 #+END_SRC
 
-* Testing Cackledaemon :export:
+* Testing and Linting Cackledaemon :export:
 Cackledaemon's tests use the [[https://pester.dev/][Pester test framework]]. Each test runs in a test environment
 that sets up an isolated environment that writes files to a [[https://pester.dev/docs/usage/testdrive][test drive]].
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1 :noweb yes
 <<license-header>>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments','',Justification = 'Pester does "interesting" things with scope, these are false positives')]
+param()
+
 function Initialize-TestEnvironment {
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars','',Justification='The test environment is inheretly global in nature')]
+  param()
+
   $Global:OriginalAppData = $Env:AppData
   $Global:OriginalProgramFiles = $Env:ProgramFiles
   $Global:OriginalUserProfile = $Env:UserProfile
@@ -165,6 +174,9 @@ function Initialize-TestEnvironment {
 }
 
 function Restore-StandardEnvironment {
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars','',Justification='The test environment is inheretly global in nature')]
+  param()
+
   $Env:AppData = $Global:OriginalAppData
   $Env:ProgramFiles = $Global:OriginalProgramFiles
   $Env:UserProfile = $Global:OriginalUserProfile
@@ -192,6 +204,25 @@ environment isn't inadvertently modified by the tests.
 task Test {
   powershell -Command Invoke-Pester
   Test-ModuleManifest .\Cackledaemon\Cackledaemon.psd1
+}
+
+#+END_SRC
+
+Linting uses PSScriptAnalyzer. While it can't lint this file directly, it can
+lint the output.
+
+#+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
+task Lint {
+  Get-ChildItem `
+    -Path '.' `
+    -Filter '*.ps*1' `
+    -Exclude @(
+      'Secrets.ps1',
+      '*Configuration.ps1'
+    )`
+    -Recurse | Invoke-ScriptAnalyzer `
+      -Settings PSGallery `
+      -ExcludeRule PSAvoidUsingPositionalParameters
 }
 
 #+END_SRC
@@ -1074,7 +1105,8 @@ needs to ensure that the log is written to the file before the error is thrown.
     }
 
     It ('logs at the {0} level' -f $_) {
-      Invoke-Expression "Write-CD${_} 'Test message'" 3> $null
+      $Command = Get-Command "Write-CD${_}"
+      & $Command 'Test message' 3> $null
 
       "$TestDrive\Cackledaemon\Cackledaemon.log" | Should -FileContentMatch "^$TimestampRegexp \[${_}\] Test message$"
     }
@@ -2431,6 +2463,9 @@ We can create a shortcut by using [[https://docs.microsoft.com/en-us/windows/win
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Get-WShell {
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars','',Justification='Using a global singleton for a WShell instance is appropriate')]
+  param()
+
   if (-not $WShell) {
     $Global:WShell = New-Object -comObject WScript.Shell
   }
@@ -2696,14 +2731,17 @@ It supports both script blocks and string commands.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Invoke-PostInstallHook {
-    . $CackledaemonConfigLocation
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingInvokeExpression','',Justification = 'Who am I to stop the user from using eval?')]
+  param()
 
-    if ($PostInstallHook -is [string]) {
-        Invoke-Expression $PostInstallHook
-    }
-    if ($PostInstallHook -is [scriptblock]) {
-        & $PostInstallHook
-    }
+  . $CackledaemonConfigLocation
+
+  if ($PostInstallHook -is [string]) {
+    Invoke-Expression $PostInstallHook
+  }
+  if ($PostInstallHook -is [scriptblock]) {
+    & $PostInstallHook
+  }
 }
 
 #+END_SRC
@@ -3374,6 +3412,7 @@ the NotifyIcon a well-formed parent.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
 function Invoke-CDApplet {
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars','',Justification='Using Windows Forms necessitates global variables')]
   [CmdletBinding()]
   param()
 
@@ -3498,7 +3537,7 @@ These items are appropriately enabled and disabled when the menu is right-clicke
 
   $StopDaemonItem = New-Object System.Windows.Forms.MenuItem
   $StopDaemonItem.Text = 'Stop Emacs Daemon...'
-  $StopDaemoClick = {
+  $OnStopDaemonClick = {
     Start-InstrumentedBlock 'Failed to stop the Emacs daemon' {
       Stop-EmacsDaemon -ErrorAction Stop
     }
@@ -3930,6 +3969,9 @@ task Publish Build, Test, {
 #+END_SRC
 
 * ChangeLog :export:
+** 2020-05-14 Release v0.1.4
+- Add linting
+- Patch a bug in ~Invoke-CDApplet~ that breaks stopping the Emacs daemon
 ** 2020-05-14 Release v0.1.3
 - Quote module path to support paths with spaces in them
 ** 2020-05-14 Release v0.1.2
