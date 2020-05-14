@@ -64,7 +64,7 @@ Write-Host ''
 
 if ($InstallCackledaemon) {
   Write-Host 'Installing the Cackledaemon module...'
-  Install-Module -Force Cackledaemon
+  Install-Module -Scope CurrentUser -Force Cackledaemon
   Write-Host 'All done!'
 }
 
