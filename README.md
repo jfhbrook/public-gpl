@@ -77,7 +77,7 @@ information someone would need to use it effectively.
 # Building Cackledaemon
 
 This project uses [Invoke-Build](https://github.com/nightroman/Invoke-Build) to manage its tasks. Running `Invoke-Build` by
-default will clean up old files, run the build and run tests.
+default will clean up old files, run the build and run linting and tests.
 
     # Copyright 2020 Josh Holbrook
     #
@@ -96,7 +96,10 @@ default will clean up old files, run the build and run tests.
     # You should have received a copy of the GNU General Public License
     # along with Cackledaemon.  if not, see <https://www.gnu.org/licenses/>.
     
-    task . Clean, Build, Test
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingCmdletAliases','')]
+    param()
+    
+    task . Clean, Build, Lint, Test
 
 Before running the build, it's a good idea to use `Remove-Item` to clean up old
 files, especially if any of the filenames that org-mode is tangling to have
@@ -154,7 +157,7 @@ export the README.
       (message "Done."))
 
 
-# Testing Cackledaemon
+# Testing and Linting Cackledaemon
 
 Cackledaemon's tests use the [Pester test framework](https://pester.dev/). Each test runs in a test environment
 that sets up an isolated environment that writes files to a [test drive](https://pester.dev/docs/usage/testdrive).
@@ -176,7 +179,13 @@ that sets up an isolated environment that writes files to a [test drive](https:/
     # You should have received a copy of the GNU General Public License
     # along with Cackledaemon.  if not, see <https://www.gnu.org/licenses/>.
     
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments','',Justification = 'Pester does "interesting" things with scope, these are false positives')]
+    param()
+    
     function Initialize-TestEnvironment {
+      [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars','',Justification='The test environment is inheretly global in nature')]
+      param()
+    
       $Global:OriginalAppData = $Env:AppData
       $Global:OriginalProgramFiles = $Env:ProgramFiles
       $Global:OriginalUserProfile = $Env:UserProfile
@@ -201,6 +210,9 @@ that sets up an isolated environment that writes files to a [test drive](https:/
     }
     
     function Restore-StandardEnvironment {
+      [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars','',Justification='The test environment is inheretly global in nature')]
+      param()
+    
       $Env:AppData = $Global:OriginalAppData
       $Env:ProgramFiles = $Global:OriginalProgramFiles
       $Env:UserProfile = $Global:OriginalUserProfile
@@ -225,6 +237,22 @@ environment isn't inadvertently modified by the tests.
     task Test {
       powershell -Command Invoke-Pester
       Test-ModuleManifest .\Cackledaemon\Cackledaemon.psd1
+    }
+
+Linting uses PSScriptAnalyzer. While it can't lint this file directly, it can
+lint the output.
+
+    task Lint {
+      Get-ChildItem `
+        -Path '.' `
+        -Filter '*.ps*1' `
+        -Exclude @(
+          'Secrets.ps1',
+          '*Configuration.ps1'
+        )`
+        -Recurse | Invoke-ScriptAnalyzer `
+          -Settings PSGallery `
+          -ExcludeRule PSAvoidUsingPositionalParameters
     }
 
 
@@ -263,6 +291,12 @@ software.
 
 
 # ChangeLog
+
+
+## 2020-05-14 Release v0.1.4
+
+-   Add linting
+-   Patch a bug in `Invoke-CDApplet` that breaks stopping the Emacs daemon
 
 
 ## 2020-05-14 Release v0.1.3
