@@ -61,6 +61,11 @@ You don't need to run this as Administrator - Cackledaemon will install
 itself for your user and will prompt for Administrator access whenever it needs
 to install Emacs system-wide.
 
+Note that the version of [PowerShellGet](https://docs.microsoft.com/en-us/powershell/module/powershellget/?view=powershell-5.1) installed by default on Windows 10 is
+quite old and that regardless it's likely a good idea to [upgrade](https://docs.microsoft.com/en-us/powershell/scripting/gallery/installing-psget?view=powershell-5.1). I test against
+v2.2.3 - you can check your own version by running `Get-Module PowerShellGet` in
+a PowerShell terminal.
+
 
 # Learning More
 
@@ -264,6 +269,7 @@ software.
 
 -   `Get-Command` call in install wizard is now silent when Emacs isn't installed
 -   Ensure PSeudo is at least version 1.0 in manifest
+-   Explicitly install Cackledaemon as the current user
 
 
 ## 2020-05-11 Release v0.1.1

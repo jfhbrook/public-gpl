@@ -64,6 +64,11 @@ Invoke-Expression (New-Object System.Net.WebClient).DownloadString('https://raw.
 You don't need to run this as Administrator - Cackledaemon will install
 itself for your user and will prompt for Administrator access whenever it needs
 to install Emacs system-wide.
+
+Note that the version of [[https://docs.microsoft.com/en-us/powershell/module/powershellget/?view=powershell-5.1][PowerShellGet]] installed by default on Windows 10 is
+quite old and that regardless it's likely a good idea to [[https://docs.microsoft.com/en-us/powershell/scripting/gallery/installing-psget?view=powershell-5.1][upgrade]]. I test against
+v2.2.3 - you can check your own version by running ~Get-Module PowerShellGet~ in
+a PowerShell terminal.
 * Learning More :export:
 The [[https://github.com/jfhbrook/cackledaemon/blob/master/Cackledaemon.org][source code for Cackledaemon]], a literate program with prose and source code
 intermixed, should be readable from top to bottom and contains all the
@@ -233,9 +238,7 @@ Set-Alias Invoke-CDInstallWizard (Join-Path $PSScriptRoot 'InstallWizard.ps1')
 #+END_SRC
 
 First, it will attempt to install or update Cackledaemon. It does this using
-[[https://docs.microsoft.com/en-us/powershell/module/powershellget/install-module?view=powershell-5.1][Install-Module]] from PowerShellGet. Note that the version of PowerShellGet
-installed by default on Windows 10 is quite old and that regardless it's likely
-a good idea to [[https://docs.microsoft.com/en-us/powershell/scripting/gallery/installing-psget?view=powershell-5.1][upgrade]].
+[[https://docs.microsoft.com/en-us/powershell/module/powershellget/install-module?view=powershell-5.1][Install-Module]] from PowerShellGet.
 
 #+BEGIN_SRC powershell :tangle ./InstallWizard.ps1
 $InstalledModule = Get-InstalledModule 'Cackledaemon' -ErrorAction SilentlyContinue
@@ -280,7 +283,7 @@ Write-Host ''
 
 if ($InstallCackledaemon) {
   Write-Host 'Installing the Cackledaemon module...'
-  Install-Module -Force Cackledaemon
+  Install-Module -Scope CurrentUser -Force Cackledaemon
   Write-Host 'All done!'
 }
 
@@ -3930,6 +3933,7 @@ task Publish Build, Test, {
 ** Master
 - ~Get-Command~ call in install wizard is now silent when Emacs isn't installed
 - Ensure PSeudo is at least version 1.0 in manifest
+- Explicitly install Cackledaemon as the current user
 ** 2020-05-11 Release v0.1.1
 - Copy edits to the introduction
 - A link to the release announcement blog post
