@@ -265,7 +265,7 @@ software.
 # ChangeLog
 
 
-## Master
+## 2020-05-14 Release v0.1.2
 
 -   `Get-Command` call in install wizard is now silent when Emacs isn't installed
 -   Ensure PSeudo is at least version 1.0 in manifest
