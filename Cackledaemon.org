@@ -3770,7 +3770,7 @@ or - at your option - any later version.
 @{
   RootModule = 'Cackledaemon.psm1'
 
-  ModuleVersion = '0.1.3'
+  ModuleVersion = '0.1.4'
 
   GUID = '10d14360-ee5c-4363-bfe8-f4116a8ce764'
 
@@ -3962,7 +3962,7 @@ If any PowerShell experts out there have alternate suggestions, feel free to
 reach out to the author.
 
 #+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
-task Publish Build, Test, {
+task Publish Build, Lint, Test, {
     . .\Secrets.ps1
      Publish-Module -Path .\Cackledaemon\ -NuGetApiKey $PowershellGalleryAPIKey
 }
