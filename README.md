@@ -293,6 +293,11 @@ software.
 # ChangeLog
 
 
+## Master
+
+-   When there is no Shortcuts.csv file, shortcuts in the Gnu Emacs directory are unmodified.
+
+
 ## 2020-05-14 Release v0.1.4
 
 -   Add linting
