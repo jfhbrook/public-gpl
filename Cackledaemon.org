@@ -691,14 +691,20 @@ class ShortcutRecord {
 }
 
 function Get-ShortcutsConfig {
-    Import-Csv -Path (Join-Path $CackledaemonWD './Shortcuts.csv') | ForEach-Object {
-        New-Object ShortcutRecord $_.ShortcutName, $_.EmacsBinaryName, ($_.ArgumentList | ConvertFrom-Json), $_.Description
+  $ShortcutsPath = Join-Path $CackledaemonWD 'Shortcuts.csv'
+
+  if (Test-Path $ShortcutsPath) {
+    Import-Csv -Path $ShortcutsPath | ForEach-Object {
+      New-Object ShortcutRecord $_.ShortcutName, $_.EmacsBinaryName, ($_.ArgumentList | ConvertFrom-Json), $_.Description
     }
+  }
 }
 
 #+END_SRC
 
 Tests ensure that this deserialization works as expected.
+This deserialization will work as expected when the file exists, and will return
+a null config if the file is absent.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
 Describe 'Get-ShortcutsConfig' {
@@ -710,17 +716,29 @@ Describe 'Get-ShortcutsConfig' {
     Restore-StandardEnvironment
   }
 
-  It 'loads shortcuts settings' {
-    $Config = Get-ShortcutsConfig
+  Context 'when there is a Shortcuts.csv' {
+    It 'loads shortcuts settings' {
+      $Config = Get-ShortcutsConfig
 
-    $Config | Should -Not -Be $null
+      $Config | Should -Not -Be $null
 
-    $Config.length | Should -Be 1
+      $Config.length | Should -Be 1
 
-    $Config[0].ShortcutName | Should -Be 'EmacsClient'
-    $Config[0].EmacsBinaryName | Should -Be 'emacsclientw.exe'
-    $Config[0].ArgumentList | Should -Be @()
-    $Config[0].Description | Should -Be 'GNU EmacsClient: The client for the extensible self-documenting text editor'
+      $Config[0].ShortcutName | Should -Be 'EmacsClient'
+      $Config[0].EmacsBinaryName | Should -Be 'emacsclientw.exe'
+      $Config[0].ArgumentList | Should -Be @()
+      $Config[0].Description | Should -Be 'GNU EmacsClient: The client for the extensible self-documenting text editor'
+    }
+  }
+
+  Context "when there isn't a Shortcuts.csv" {
+    It 'returns null' {
+      Remove-Item "$CackledaemonWD\Shortcuts.csv"
+
+      $Config = Get-ShortcutsConfig
+
+      $Config | Should -Be $null
+    }
   }
 }
 
@@ -2580,23 +2598,26 @@ function Install-CDShortcuts {
   . $CackledaemonConfigLocation
 
   $Config = Get-ShortcutsConfig
-  $CurrentItems = Get-StartMenuItems
-  $DesiredShortcutPaths = $Config | ForEach-Object {
-    Join-Path $StartMenuPath ($_.ShortcutName + ".lnk")
-  }
 
-  $CurrentItems | Where-Object {
-    -not $DesiredShortcutPaths.Contains($_.FullName)
-  } | ForEach-Object {
-    Remove-Item $_
-  }
+  if ($Config) {
+    $CurrentItems = Get-StartMenuItems
+    $DesiredShortcutPaths = $Config | ForEach-Object {
+        Join-Path $StartMenuPath ($_.ShortcutName + ".lnk")
+    }
 
-  $Config | ForEach-Object {
-    Set-Shortcut `
-      -ShortcutPath (Join-Path $StartMenuPath ($_.ShortcutName + ".lnk")) `
-      -TargetPath (Join-Path "$EmacsInstallLocation\bin" $_.EmacsBinaryName) `
-      -ArgumentList $_.ArgumentList `
-      -Description $_.Description
+    $CurrentItems | Where-Object {
+        -not $DesiredShortcutPaths.Contains($_.FullName)
+    } | ForEach-Object {
+        Remove-Item $_
+    }
+
+    $Config | ForEach-Object {
+        Set-Shortcut `
+        -ShortcutPath (Join-Path $StartMenuPath ($_.ShortcutName + ".lnk")) `
+        -TargetPath (Join-Path "$EmacsInstallLocation\bin" $_.EmacsBinaryName) `
+        -ArgumentList $_.ArgumentList `
+        -Description $_.Description
+    }
   }
 }
 
@@ -2606,6 +2627,9 @@ This function takes the name of an Emacs exe and ensures that the lookup happens
 inside of the configured Emacs install location. It also ensures that shortcuts
 are created inside of the configured start menu path and that they end in the
 right extension.
+
+When there is no config, calling ~Install-CDShortcuts~ is a noop and the
+directory is left untouched.
 
 #+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
 Describe 'Install-CDShortcuts' {
@@ -2617,13 +2641,25 @@ Describe 'Install-CDShortcuts' {
 
   AfterEach {
     Restore-StandardEnvironment
+  }
+
+  Context 'when the shortcusts file exists' {
+    It 'installs shortcuts' {
+      Install-CDShortcuts
+
+      'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\RemoveMe.lnk' | Should -Not -Exist
+      'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\EmacsClient.lnk' | Should -Exist
     }
+  }
 
-  It 'installs shortcuts' {
-    Install-CDShortcuts
+  Context "when the shortcuts file doesn't exist" {
+    It "doesn't modify the directory" {
+      Remove-Item "$CackledaemonWD\Shortcuts.csv"
 
-    'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\RemoveMe.lnk' | Should -Not -Exist
-    'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\EmacsClient.lnk' | Should -Exist
+      Install-CDShortcuts
+
+      'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\RemoveMe.lnk' | Should -Exist
+    }
   }
 }
 
@@ -3969,6 +4005,8 @@ task Publish Build, Lint, Test, {
 #+END_SRC
 
 * ChangeLog :export:
+** Master
+- When there is no Shortcuts.csv file, shortcuts in the Gnu Emacs directory are unmodified.
 ** 2020-05-14 Release v0.1.4
 - Add linting
 - Patch a bug in ~Invoke-CDApplet~ that breaks stopping the Emacs daemon
