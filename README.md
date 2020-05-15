@@ -293,6 +293,11 @@ software.
 # ChangeLog
 
 
+## Master
+
+-   Shortcuts directory is created if it doesn't already exist
+
+
 ## 2020-05-15 Release v0.1.5
 
 -   When there is no Shortcuts.csv file, shortcuts in the Gnu Emacs directory are unmodified.
