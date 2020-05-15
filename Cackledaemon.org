@@ -2600,6 +2600,10 @@ function Install-CDShortcuts {
   $Config = Get-ShortcutsConfig
 
   if ($Config) {
+    if (-not (Test-Path $StartMenuPath)) {
+      New-Item -Type Directory $StartMenuPath
+    }
+
     $CurrentItems = Get-StartMenuItems
     $DesiredShortcutPaths = $Config | ForEach-Object {
         Join-Path $StartMenuPath ($_.ShortcutName + ".lnk")
@@ -4018,6 +4022,8 @@ task Publish Build, Lint, Test, {
 #+END_SRC
 
 * ChangeLog :export:
+** Master
+- Shortcuts directory is created if it doesn't already exist
 ** 2020-05-15 Release v0.1.5
 - When there is no Shortcuts.csv file, shortcuts in the Gnu Emacs directory are unmodified.
 ** 2020-05-14 Release v0.1.4
