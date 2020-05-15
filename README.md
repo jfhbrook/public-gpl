@@ -293,7 +293,7 @@ software.
 # ChangeLog
 
 
-## Master
+## 2020-05-15 Release v0.1.6
 
 -   Shortcuts directory is created if it doesn't already exist
 
