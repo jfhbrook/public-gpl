@@ -3806,7 +3806,7 @@ or - at your option - any later version.
 @{
   RootModule = 'Cackledaemon.psm1'
 
-  ModuleVersion = '0.1.4'
+  ModuleVersion = '0.1.5'
 
   GUID = '10d14360-ee5c-4363-bfe8-f4116a8ce764'
 
@@ -4005,7 +4005,7 @@ task Publish Build, Lint, Test, {
 #+END_SRC
 
 * ChangeLog :export:
-** Master
+** 2020-05-15 Release v0.1.5
 - When there is no Shortcuts.csv file, shortcuts in the Gnu Emacs directory are unmodified.
 ** 2020-05-14 Release v0.1.4
 - Add linting
