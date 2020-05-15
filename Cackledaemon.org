@@ -2635,30 +2635,43 @@ directory is left untouched.
 Describe 'Install-CDShortcuts' {
   BeforeEach {
     Initialize-TestEnvironment
-    New-Item -Type Directory 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
-    New-Item 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\RemoveMe.lnk'
   }
 
   AfterEach {
     Restore-StandardEnvironment
   }
 
-  Context 'when the shortcusts file exists' {
-    It 'installs shortcuts' {
-      Install-CDShortcuts
+  Context 'when the directory exists' {
+    BeforeEach {
+      New-Item -Type Directory 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
+      New-Item 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\RemoveMe.lnk'
+    }
 
-      'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\RemoveMe.lnk' | Should -Not -Exist
-      'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\EmacsClient.lnk' | Should -Exist
+    Context 'when the shortcuts file exists' {
+        It 'installs shortcuts' {
+        Install-CDShortcuts
+
+        'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\RemoveMe.lnk' | Should -Not -Exist
+        'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\EmacsClient.lnk' | Should -Exist
+        }
+    }
+
+    Context "when the shortcuts file doesn't exist" {
+        It "doesn't modify the directory" {
+        Remove-Item "$CackledaemonWD\Shortcuts.csv"
+
+        Install-CDShortcuts
+
+        'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\RemoveMe.lnk' | Should -Exist
+        }
     }
   }
 
-  Context "when the shortcuts file doesn't exist" {
-    It "doesn't modify the directory" {
-      Remove-Item "$CackledaemonWD\Shortcuts.csv"
-
+  Context "when the directory does't exist" {
+    It 'creates the directory and installs shortcuts' {
       Install-CDShortcuts
 
-      'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\RemoveMe.lnk' | Should -Exist
+      'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\EmacsClient.lnk' | Should -Exist
     }
   }
 }
