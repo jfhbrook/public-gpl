@@ -3777,6 +3777,10 @@ launch on user login.
 function Install-CDApplet {
   . $CackledaemonConfigLocation
 
+  if (-not (Test-Path $StartMenuPath)) {
+    New-Item -Type Directory $StartMenuPath
+  }
+
   $StartupPath = Join-Path $Env:AppData 'Microsoft\Windows\Start Menu\Programs\Startup'
 
   @($StartMenuPath, $StartupPath) | ForEach-Object {
@@ -3797,7 +3801,6 @@ directory is non-configurable.
 Describe 'Install-CDApplet' {
   BeforeEach {
     Initialize-TestEnvironment
-    New-Item -Type Directory 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
     New-Item -Type Directory 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Startup'
   }
 
@@ -3805,11 +3808,26 @@ Describe 'Install-CDApplet' {
     Restore-StandardEnvironment
   }
 
-  It 'installs applet shortcuts' {
-    Install-CDApplet
+  Context 'when the shortcuts directory exists' {
+    BeforeEach {
+      New-Item -Type Directory 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
+    }
 
-    'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\Cackledaemon.lnk' | Should -Exist
-    'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Startup\Cackledaemon.lnk' | Should -Exist
+    It 'installs applet shortcuts' {
+      Install-CDApplet
+
+      'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\Cackledaemon.lnk' | Should -Exist
+      'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Startup\Cackledaemon.lnk' | Should -Exist
+    }
+  }
+
+  Context "when the shortcuts directory doesn't exist" {
+    It 'installs the applet shorcuts' {
+      Install-CDApplet
+
+      'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\Cackledaemon.lnk' | Should -Exist
+      'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Startup\Cackledaemon.lnk' | Should -Exist
+    }
   }
 }
 
