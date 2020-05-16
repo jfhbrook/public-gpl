@@ -3777,6 +3777,10 @@ launch on user login.
 function Install-CDApplet {
   . $CackledaemonConfigLocation
 
+  if (-not (Test-Path $StartMenuPath)) {
+    New-Item -Type Directory $StartMenuPath
+  }
+
   $StartupPath = Join-Path $Env:AppData 'Microsoft\Windows\Start Menu\Programs\Startup'
 
   @($StartMenuPath, $StartupPath) | ForEach-Object {
