@@ -3813,7 +3813,6 @@ Describe 'Install-CDApplet' {
       New-Item -Type Directory 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
     }
 
-
     It 'installs applet shortcuts' {
       Install-CDApplet
 
