@@ -293,9 +293,16 @@ software.
 # ChangeLog
 
 
+## 2020-05-16 Release v0.1.7
+
+-   Shortcuts directory is created if it doesn't already exist when installing the
+    applet shortcuts
+
+
 ## 2020-05-15 Release v0.1.6
 
--   Shortcuts directory is created if it doesn't already exist
+-   Shortcuts directory is created if it doesn't already exist when installing
+    Emacs shortcuts
 
 
 ## 2020-05-15 Release v0.1.5
