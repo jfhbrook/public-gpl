@@ -1,3 +1,11 @@
 *.ps1
 *.el
 Cackledaemon/*
+NycEmacsLightningTalk/**.vrb
+NycEmacsLightningTalk/*.aux
+NycEmacsLightningTalk/*.log
+NycEmacsLightningTalk/*.nav
+NycEmacsLightningTalk/*.out
+NycEmacsLightningTalk/*.snm
+NycEmacsLightningTalk/*.tex
+NycEmacsLightningTalk/*.toc
