@@ -308,7 +308,7 @@ I wrote a project in PowerShell that runs the Emacs daemon in a tray icon
   Emacs in Windows "natively" and is intended to be a reference as much as it is
   a framework
 - The document exports into an abbreviated README
--[[https://github.com/jfhbrook/Cackledaemon][ It's open source! (GPLv3+)]]
+- [[https://github.com/jfhbrook/Cackledaemon][It's open source! (GPLv3+)]]
 * Good Things about Org-Mode and Literate Programming
 ** Organizationally They're Quite Good
 - Literate programs can be organized the way my brain is
