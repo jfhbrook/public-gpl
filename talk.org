@@ -6,6 +6,10 @@
 #+AUTHOR: Josh Holbrook
 #+DATE: August 2020
 
+* Notes to Self :noexport:
+- Boost font size in Alacritty: ~C-=~
+- Boost font size in Emacs: ~C-M-=~
+- Collapse and expand headers appropriately ahead of time
 * Who Am I?
 ** Who Am I?
 - Hi I'm Josh
@@ -15,16 +19,16 @@
 - I've used Org Mode to write literate programs
 * Org Mode and Org-Babel
 ** What's Org Mode?
-- Emacs has different modes for different file types
+- Emacs has different modes for different buffers
 - The ~org-mode~ package enables support for org files
 - Org *files* are based on an older outline mode in Emacs
 - Org is really good for implementing TODO lists, GTD and other "productivity
   systems"
 ** Org Has a Lot of Features
 - Outlines, sure
-- TODO states
+- TODO states, of course
 - Capture templates
-- Calendar management
+- Calendar management (agendas)
 ** Features That Go Beyond Productivity
 - *Markdown-like* text formatting
 - [[https://www.youtube.com/watch?v=dQw4w9WgXcQ][Links]], hypertext and otherwise
@@ -52,6 +56,10 @@
 #+BEGIN_SRC emacs-lisp
 (message "hello world!")
 #+END_SRC
+
+#+RESULTS:
+: hello world!
+
 * Literate Programming
 ** The Origins of Literate Programming
 - Literate programming was [[https://en.wikipedia.org/wiki/Literate_programming][invented by Donald Knuth in the mid 80s]]
