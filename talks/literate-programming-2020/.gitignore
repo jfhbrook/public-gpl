@@ -1,0 +1,5 @@
+*.log
+_minted-talk
+.auctex-auto
+hello-express/**
+talk.tex
