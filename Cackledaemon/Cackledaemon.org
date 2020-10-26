@@ -1,0 +1,4125 @@
+#+TITLE: Cackledaemon - An Emacs Installation and Runtime Manager for Windows 10
+#+AUTHOR: Josh Holbrook
+#+OPTIONS: tags:nil toc:nil
+
+* Introduction :export:
+#+BEGIN_QUOTE
+Oh-ho-ho! Swirly Photoshop magic! I bet this thing could release some serious
+cackledemons!
+
+-- Strong Bad
+#+END_QUOTE
+
+In recent times I've become a big fan of [[https://www.gnu.org/software/emacs/][Emacs]].
+
+On a really surface level Emacs is a humble code editor, but the truth is that
+Emacs is less a code editor and more of a *framework* for *writing text-based
+applications*. I like to compare it to [[https://nodejs.org][Node.js]] in this regard, which, while
+really good at being a webserver is no [[https://www.nginx.com/][NGINX]], but instead a runtime where you
+can import lots of tiny pieces of functionality a la carte to make your own
+webserver.
+
+When Emacs starts it loads a configuration from the =~/.emacs.d= directory, and
+any one of these configurations does exactly this - it installs packages from
+the internet, requires them and uses [[https://www.gnu.org/software/emacs/manual/html_node/eintr/][Emacs Lisp]] to create a complete
+application. I use a third party configuration called [[https://github.com/hlissner/doom-emacs][Doom Emacs]], which uses a
+package called [[https://github.com/emacs-evil/evil][evil]] that makes Emacs pretend to be [[https://www.vim.org/][vim]] (my prior code editor of
+choice). Another popular vim-y distribution that I've used successfully in the
+past is called [[https://www.spacemacs.org/][spacemacs]]. Other distributions, including ones that *don't*
+pretend to be vim, can be found in this [[https://github.com/emacs-tw/awesome-emacs#starter-kit][Awesome Emacs list of starter kits]].
+
+In addition to editing code, I also use Emacs for personal task management,
+using an Emacs package called [[https://orgmode.org/][org-mode]] combined with a process somewhere in
+between [[https://en.wikipedia.org/wiki/Getting_Things_Done][GTD]] and [[https://en.wikipedia.org/wiki/Bullet_Journal][bullet journaling]]. I also have a lot of computers and I use
+Emacs on all of them. One of these computers happens to run Windows 10 - meaning
+that I run Emacs on Windows.
+
+Running Emacs in Windows is a bit of a mess. This is because Emacs was written
+with Unix-like systems in mind. That means that in Linux you can casually
+install it with your package manager and everything Just Works, and that in OSX
+you can install either a [[https://emacsformacosx.com/][universal binary]] or - if you prefer - [[https://brew.sh/][homebrew]], and
+have a more or less seamless process. Windows, meanwhile, doesn't have a nice
+installer, environment configuration is up to interpretation, actually invoking
+Emacs differs significantly, and running Emacs as a daemon becomes difficult.
+
+This project, a [[https://docs.microsoft.com/en-us/powershell/scripting/overview?view=powershell-5.1][PowerShell]] module written as a [[https://en.wikipedia.org/wiki/Literate_programming][literate program]] using [[https://orgmode.org/worg/org-contrib/babel/][org-babel]],
+contains tools for managing Emacs on Windows, namely an **installation setup
+wizard** and a **tray icon for managing the Emacs daemon**.
+
+For more information, check out [[https://dev.to/jfhbrook/introducing-cackledaemon-2dek][this blog post I wrote on dev.to]] that has some
+screenshots and a project postmortem.
+
+* Getting Started :export:
+Cackledaemon includes an installation wizard that will install the Cackledaemon
+module off [[https://www.powershellgallery.com/packages/Cackledaemon][the PowerShell Gallery]] and then walk the user through installing
+Emacs, setting up their environment, and installing the tray icon, configuring
+it to run when you log into Windows. You can download and run the latest version
+of this installer by copying and pasting the following snippet into a PowerShell
+window.
+
+#+BEGIN_SRC powershell
+Invoke-Expression (New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/jfhbrook/Cackledaemon/master/InstallWizard.ps1')
+#+END_SRC
+
+You don't need to run this as Administrator - Cackledaemon will install
+itself for your user and will prompt for Administrator access whenever it needs
+to install Emacs system-wide.
+
+Note that the version of [[https://docs.microsoft.com/en-us/powershell/module/powershellget/?view=powershell-5.1][PowerShellGet]] installed by default on Windows 10 is
+quite old and that regardless it's likely a good idea to [[https://docs.microsoft.com/en-us/powershell/scripting/gallery/installing-psget?view=powershell-5.1][upgrade]]. I test against
+v2.2.3 - you can check your own version by running ~Get-Module PowerShellGet~ in
+a PowerShell terminal.
+* Learning More :export:
+The [[https://github.com/jfhbrook/cackledaemon/blob/master/Cackledaemon.org][source code for Cackledaemon]], a literate program with prose and source code
+intermixed, should be readable from top to bottom and contains all the
+information someone would need to use it effectively.
+* Building Cackledaemon :export:
+This project uses [[https://github.com/nightroman/Invoke-Build][Invoke-Build]] to manage its tasks. Running ~Invoke-Build~ by
+default will clean up old files, run the build and run linting and tests.
+
+#+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1 :noweb yes
+<<license-header>>
+
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingCmdletAliases','')]
+param()
+
+task . Clean, Build, Lint, Test
+
+#+END_SRC
+
+Before running the build, it's a good idea to use ~Remove-Item~ to clean up old
+files, especially if any of the filenames that org-mode is tangling to have
+changed. Running ~Invoke-Build~ without arguments will run this step
+automatically, but it can be ran in isolation with ~Invoke-Build Clean~.
+
+#+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
+task Clean {
+  Get-ChildItem './Cackledaemon' | ForEach-Object {
+    Remove-Item $_.FullName
+  }
+  Remove-Item 'README.md' -ErrorAction 'SilentlyContinue'
+  Remove-Item 'README.md~' -ErrorAction 'SilentlyContinue'
+}
+
+#+END_SRC
+
+The build itself can be started in isolation by running ~Invoke-Build Build~.
+
+#+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
+task Build {
+  emacs.exe --batch --load build.el
+  Copy-Item COPYING .\Cackledaemon\COPYING -ErrorAction 'SilentlyContinue'
+  Copy-Item InstallWizard.ps1 .\Cackledaemon\InstallWizard.ps1 -ErrorAction 'SilentlyContinue'
+  Remove-Item 'README.md~' -ErrorAction 'SilentlyContinue'
+}
+
+#+END_SRC
+
+This task will call Emacs in [[https://www.gnu.org/software/emacs/manual/html_node/elisp/Batch-Mode.html][batch mode]] to tangle this file into the working
+module using ~org-babel~ and export the README. Alternately, you may type ~C-c
+C-v t~ with this file open in Emacs to tangle it and use ~org-export-to-file~ to
+export the README.
+
+#+BEGIN_SRC emacs-lisp :tangle build.el :noweb yes
+<<emacs-lisp-license-header>>
+
+(progn
+  (require 'org)
+  (require 'ob-tangle)
+  (require 'ox-md)
+
+  (with-current-buffer (find-file-noselect "Cackledaemon.org")
+    (message "Tangling Code...")
+    (org-babel-tangle)
+    (message "Generating README...")
+    (org-export-to-file 'md "README.md"))
+  (message "Done."))
+#+END_SRC
+
+* Testing and Linting Cackledaemon :export:
+Cackledaemon's tests use the [[https://pester.dev/][Pester test framework]]. Each test runs in a test environment
+that sets up an isolated environment that writes files to a [[https://pester.dev/docs/usage/testdrive][test drive]].
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1 :noweb yes
+<<license-header>>
+
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments','',Justification = 'Pester does "interesting" things with scope, these are false positives')]
+param()
+
+function Initialize-TestEnvironment {
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars','',Justification='The test environment is inheretly global in nature')]
+  param()
+
+  $Global:OriginalAppData = $Env:AppData
+  $Global:OriginalProgramFiles = $Env:ProgramFiles
+  $Global:OriginalUserProfile = $Env:UserProfile
+  $Global:OriginalModulePath = (Get-Module 'Cackledaemon').Path
+
+  $Env:AppData = "$TestDrive\AppData"
+  $Env:ProgramFiles = "$TestDrive\Program Files"
+
+  $Env:UserProfile = "$TestDrive\UserProfile"
+
+  New-Item -Type Directory $Env:AppData
+  New-Item -Type Directory $Env:ProgramFiles
+  New-Item -Type Directory $Env:UserProfile
+
+  Remove-Module Cackledaemon -ErrorAction 'SilentlyContinue'
+  Import-Module .\Cackledaemon\Cackledaemon.psm1
+
+  $Global:CackledaemonWD = "$TestDrive\Cackledaemon"
+  $Global:CackledaemonConfigLocation = "$TestDrive\Cackledaemon\Configuration.ps1"
+
+  New-CackledaemonWD
+}
+
+function Restore-StandardEnvironment {
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars','',Justification='The test environment is inheretly global in nature')]
+  param()
+
+  $Env:AppData = $Global:OriginalAppData
+  $Env:ProgramFiles = $Global:OriginalProgramFiles
+  $Env:UserProfile = $Global:OriginalUserProfile
+
+  Remove-Item -Recurse "$TestDrive\AppData"
+  Remove-Item -Recurse "$TestDrive\Program Files"
+  Remove-Item -Recurse "$TestDrive\UserProfile"
+  Remove-Item -Recurse "$TestDrive\Cackledaemon"
+
+  Remove-Module Cackledaemon
+
+  if ($Global:OriginalModulePath) {
+    Import-Module $Global:OriginalModulePath
+  }
+}
+
+#+END_SRC
+
+The tests will be ran automatically when running ~Invoke-Build~ by default but
+can be started in isolation by running ~Invoke-Build Test~. Note that the tests
+are ran in a subprocess - this is to help ensure that the state of your
+environment isn't inadvertently modified by the tests.
+
+#+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
+task Test {
+  powershell -Command Invoke-Pester
+  Test-ModuleManifest .\Cackledaemon\Cackledaemon.psd1
+}
+
+#+END_SRC
+
+Linting uses PSScriptAnalyzer. While it can't lint this file directly, it can
+lint the output.
+
+#+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
+task Lint {
+  Get-ChildItem `
+    -Path '.' `
+    -Filter '*.ps*1' `
+    -Exclude @(
+      'Secrets.ps1',
+      '*Configuration.ps1'
+    )`
+    -Recurse | Invoke-ScriptAnalyzer `
+      -Settings PSGallery `
+      -ExcludeRule PSAvoidUsingPositionalParameters
+}
+
+#+END_SRC
+* Contributing :export:
+I would be stoked if people contributed to Cackledaemon!
+
+Cackledaemon has a [[https://github.com/jfhbrook/Cackledaemon/issues][GitHub issues tracker]] which contains the handful of known
+issues with the code. Feel free to make new issues, or send me a [[https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/about-pull-requests][pull request]].
+One small note: By contributing code you will be assigning the copyright of that
+code to me. I've dealt with shared copyright in that past, and thanks but no
+thanks.
+* Licensing :export:
+Cackledaemon is 100% definitely not a part of GNU Emacs, but *is* similarly free
+software.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1 :noweb yes
+<<license-header>>
+
+#+END_SRC
+* Installing Cackledaemon
+The Cackledaemon install wizard is a script that will walk you through setting
+up Cackledaemon and Emacs. Cackledaemon requires Windows PowerShell v5.1 - as
+far as I know, PowerShell Core will not work, because Cackledaemon has a
+dependency on [[https://docs.microsoft.com/en-us/dotnet/framework/winforms/][Windows Forms]].
+
+#+BEGIN_SRC powershell :tangle ./InstallWizard.ps1 :noweb yes
+<<license-header>>
+
+#Requires -Version 5.1
+
+Write-Host 'Welcome to the Cackledaemon install wizard!'
+Write-Host ''
+Write-Host 'This script will guide you through the process of installing/updating Cackledaemon and Emacs.'
+Write-Host ''
+
+#+END_SRC
+
+This script can be invoked inside a PowerShell prompt at any time by running
+~Invoke-CDInstallWizard~.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+Set-Alias Invoke-CDInstallWizard (Join-Path $PSScriptRoot 'InstallWizard.ps1')
+
+#+END_SRC
+
+First, it will attempt to install or update Cackledaemon. It does this using
+[[https://docs.microsoft.com/en-us/powershell/module/powershellget/install-module?view=powershell-5.1][Install-Module]] from PowerShellGet.
+
+#+BEGIN_SRC powershell :tangle ./InstallWizard.ps1
+$InstalledModule = Get-InstalledModule 'Cackledaemon' -ErrorAction SilentlyContinue
+
+if ($InstalledModule) {
+  Write-Host "Cackledaemon is already installed, but there might be " -NoNewLine
+  Write-Host "updates..!" -ForegroundColor Yellow -NoNewLine
+  Write-Host " :)"
+  Write-Host "This script can " -NoNewLine
+  Write-Host "optionally" -ForegroundColor Green -NoNewLine
+  Write-Host " update the Cackledaemon module for the " -NoNewLine
+  Write-Host "current user" -ForegroundColor Cyan -NoNewLine
+  Write-Host '.'
+
+  $InstallCackledaemonChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Reinstall the Cackledaemon module the current user. This will install module updates."
+  $DontInstallCackledaemonChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Don't reinstall the Cackledaemon module. It's already installed, but there may be updates."
+
+  $InstallCackledaemon = -not [boolean]$host.UI.PromptForChoice(
+    "Do you want to reinstall Cackledaemon?",
+    "Whaddaya think?",
+    @($InstallCackledaemonChoice, $DontInstallCackledaemonChoice),
+    0
+  )
+} else {
+  Write-Host "Cackledaemon " -NoNewLine
+  Write-Host "needs to be installed!" -ForegroundColor Yellow
+  Write-Host "This script will install the Cackledaemon module for the " -NoNewLine
+  Write-Host "current user" -ForegroundColor Cyan -NoNewLine
+  Write-Host "."
+
+  $InstallCackledaemonChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Install the Cackledaemon module for the current user. This is required in order to use Cackledaemon."
+  $DontInstallCackledaemonChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Don't install the Cackledaemon module. This will abort the installation process."
+
+  $InstallCackledaemon = -not [boolean]$host.UI.PromptForChoice(
+    "Do you want to install Cackledaemon?",
+    "Whaddaya think?",
+    @($InstallCackledaemonChoice, $DontInstallCackledaemonChoice),
+    0
+  )
+}
+Write-Host ''
+
+if ($InstallCackledaemon) {
+  Write-Host 'Installing the Cackledaemon module...'
+  Install-Module -Scope CurrentUser -Force Cackledaemon
+  Write-Host 'All done!'
+}
+
+$InstalledModule = Get-InstalledModule 'Cackledaemon' -ErrorAction SilentlyContinue
+
+if (-not $InstalledModule) {
+  Write-Host 'Cackledaemon is ' -NoNewLine
+  Write-Host 'not installed' -ForegroundColor Red -NoNewLine
+  Write-Host ' and the script can not continue.'
+  Write-Host 'Have a nice day!'
+  Exit
+}
+
+#+END_SRC
+
+Next, it asks some questions about configuration, namely about which shortcuts
+to create when setting up the user's environment. These settings are stored in
+=~/AppData/Roaming/Cackledaemon= and can be modified with any text editor,
+including Emacs.
+
+#+BEGIN_SRC powershell :tangle ./InstallWizard.ps1
+Import-Module Cackledaemon
+
+if (Test-Path $CackledaemonWD) {
+  Write-Host "$CackledaemonWD already exists - nothing to do here!"
+} else {
+  Write-Host "Time to initialize " -NoNewLine
+  Write-Host $CackledaemonWD -ForegroundColor Yellow -NoNewLine
+  Write-Host "!"
+
+  $ModuleDirectory = Split-Path -Path (Get-Module Cackledaemon).Path -Parent
+  $StartMenuPath = Join-Path $Env:AppData 'Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
+  $ShortcutsCsvPath = Join-Path $ModuleDirectory 'Shortcuts.csv'
+
+  Write-Host "By default, Cackledaemon will " -NoNewLine
+  Write-Host "create these shortcuts" -ForegroundColor Green -NoNewLine
+  Write-Host " inside the 'GNU Emacs' folder in the user's Start Menu when installing Emacs:"
+  Write-Host ''
+
+  Import-Csv -Path $ShortcutsCsvPath | ForEach-Object {
+    Write-Host "- " -NoNewLine
+    Write-Host ("{0}\{1}.lnk" -f $StartMenuPath, $_.ShortcutName) -ForegroundColor Green -NoNewLine
+    Write-Host " -> " -NoNewLine
+    Write-Host $_.EmacsBinaryName -ForegroundColor Yellow
+  } | Out-Null
+  Write-Host ''
+  Write-Host "You may " -NoNewLine
+  Write-Host "edit this config" -ForegroundColor Cyan -NoNewLine
+  Write-Host " at " -NoNewLine
+  Write-Host "$CackledaemonWD\Shortcuts.csv" -ForegroundColor Yellow -NoNewLine
+  Write-Host " and re-run the Emacs install step at " -NoNewLine
+  Write-Host "any time" -ForegroundColor Green -NoNewLine
+  Write-Host " to change these shortcuts."
+
+  $InstallShortcutsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Create these shortcuts in the Start Menu. You can edit this CSV and re-run this step at any time."
+  $DontInstallShortcutsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Don't create any shortcuts in the Start Menu at this time. You can create a fresh CSV and re-run this step at any time."
+
+  $NoShortcuts = [boolean]$host.UI.PromptForChoice(
+    "Do you want to use these shortcuts?",
+    "Whaddaya think?",
+    @($InstallShortcutsChoice, $DontInstallShortcutsChoice),
+    0
+  )
+  Write-Host ''
+
+  New-CackledaemonWD -NoShortcuts $NoShortcuts | Out-Null
+}
+
+#+END_SRC
+
+Then, the wizard will attempt to install or update Emacs, by downloading an
+official .zip file and unpacking it into =C:\Program Files\emacs=, configuring
+Emacs as an exe with the Windows registry, and setting up file type
+associations. This step ultimately requires Administrator privileges; Windows
+will prompt for these elevated privileges when necessary.
+
+#+BEGIN_SRC powershell :tangle ./InstallWizard.ps1
+Write-Host "Checking the state of Emacs..."
+Write-Host ''
+
+$EmacsCommand = Get-Command 'emacs.exe' -ErrorAction 'silentlyContinue'
+
+if ($EmacsCommand) {
+  if (Test-EmacsExe -ErrorAction Stop) {
+    Write-Host "Emacs is already installed but it couldn't hurt to check for " -NoNewLine
+    Write-Host "updates..! :)" -ForegroundColor Yellow
+    Write-Host "This script can " -NoNewLine
+    Write-Host "optionally" -ForegroundColor Green -NoNewLine
+    Write-Host " install updates to Emacs for " -NoNewLine
+    Write-Host "all users" -ForegroundColor Red -NoNewLine
+    Write-Host ". It requires, and will prompt for, " -NoNewLine
+    Write-Host "Administrator privileges" -ForegroundColor Cyan -NoNewLine
+    Write-Host '.'
+
+    $InstallEmacsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Check for and install any available Emacs updates."
+    $DontInstallEmacsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Don't check for Emacs updates. Emacs is already installed, so this is probably OK. You can run this manually at any time by importing the Cackledaemon module and running 'Install-Emacs'."
+    $InstallEmacs = -not [boolean]$host.UI.PromptForChoice(
+      "Do you want to check for updates to Emacs?",
+      "Whaddaya think?",
+      @($InstallEmacsChoice, $DontInstallEmacsChoice),
+      0
+    )
+  } else {
+    Write-Host "An " -NoNewLine
+    Write-Host "unmanaged Emacs" -ForegroundColor Red -NoNewLine
+    Write-Host " is " -NoNewLine
+    Write-Host "already on your `$Path" -ForegroundColor Red -NoNewLine
+    Write-Host "! This script will probably cause " -NoNewLine
+    Write-Host "surprising behavior" -ForegroundColor Yellow -NoNewLine
+    Write-Host " but is " -NoNewLine
+    Write-Host "game to try" -ForegroundColor Cyan -NoNewLine
+    Write-Host "!"
+
+    $InstallEmacsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Install a managed Emacs alongside the unmanaged Emacs version already detected. This will likely cause surprising behavior - it is recommended that you read the manual before continuing."
+    $DontInstallEmacsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Don't install a managed Emacs. This is the safest choice, but means that you can't take advantage of Cackledaemon's features. You can run this manually at any time by importing the Cackledaemon module and running 'Install-Emacs'."
+    $InstallEmacs = -not [boolean]$host.UI.PromptForChoice(
+      "Do you want to install a managed Emacs alongside the version of Emacs already installed?",
+      "Whaddaya think?",
+      @($InstallEmacsChoice, $DontInstallEmacsChoice),
+      1
+    )
+  }
+} else {
+  Write-Host "Emacs " -NoNewLine
+  Write-Host "needs to be installed!" -ForegroundColor Yellow
+  Write-Host "This script will install Emacs for " -NoNewLine
+  Write-Host "all users" -ForegroundColor Red -NoNewLine
+  Write-Host ". It requires, and will prompt for, " -NoNewLine
+  Write-Host "Administrator privileges" -ForegroundColor Cyan -NoNewLine
+  Write-Host "."
+
+  $InstallEmacsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Install Emacs. This is required in order to use Cackledaemon and Emacs."
+  $DontInstallEmacsChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Don't install Emacs. This will abort the installation process."
+  $InstallEmacs = -not [boolean]$host.UI.PromptForChoice(
+    "Do you want to install Emacs?",
+    "Whaddaya think?",
+    @($InstallEmacsChoice, $DontInstallEmacsChoice),
+    0
+  )
+}
+
+if ($InstallEmacs) {
+  Write-Host 'Installing Emacs...'
+  Install-Emacs
+} else {
+  Write-Host 'Not installing Emacs.'
+}
+
+if (-not (Test-EmacsExe)) {
+  Write-Host 'Emacs is ' -NoNewLine
+  Write-Host 'not installed' -ForegroundColor Red -NoNewLine
+  Write-Host ' and the script can not continue.'
+  Write-Host 'Have a nice day!'
+  Exit
+}
+
+#+END_SRC
+
+Finally, Cackledaemon will set up the current user's environment. This step will
+add Emacs to the user's path, set the ~$Env:HOME~ environment variable, and create
+user shortcuts for Emacs and the Cackledaemon tray icon inside the "GNU Emacs
+folder" in the start menu. Configuring environment variables requires modifying
+the Windows registry, but doesn't require Administrator privileges.
+
+#+BEGIN_SRC powershell :tangle ./InstallWizard.ps1
+Write-Host ''
+Write-Host "Cackledaemon can also set up the " -NoNewLine
+Write-Host "current user's " -ForegroundColor Cyan -NoNewLine
+Write-Host " environment by configuring the user's `$Path and `$HOME and by creating shortcuts. This touches the user's " -NoNewLine
+Write-Host "registry" -ForegroundColor Yellow -NoNewLine
+Write-Host " but doesn't require Administrator privileges."
+
+$InstallEnvironmentChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Set up the user's environment for Emacs. This isn't strictly required but is nice to have."
+$DontInstallEnvironmentChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Don't set up the user's environment for Emacs. Emacs will be installed but it will be tough for the user to run."
+$InstallEnvironment = -not [boolean]$host.UI.PromptForChoice(
+  "Do you want to set up the user environment?",
+  "Whaddaya think?",
+  @($InstallEnvironmentChoice, $DontInstallEnvironmentChoice),
+  0
+)
+
+if ($InstallEnvironment) {
+  Write-Host "Setting up the user's environment..."
+  Install-EmacsUserEnvironment
+  Install-CDApplet
+} else {
+  Write-Host "Not touching the user's environment."
+}
+Write-Host "Have a nice day!"
+
+#+END_SRC
+* Configuration and State
+** Working Directory
+Cackledaemon needs a place to store configurations, logs and process metadata.
+For this purpose, we create a folder at =$Env:AppData\Cackledaemon=. For most
+users, this is =~\AppData\Roaming\Cackledaemon=.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+$CackledaemonWD = Join-Path $Env:AppData 'Cackledaemon'
+$CackledaemonConfigLocation = Join-Path $CackledaemonWD 'Configuration.ps1'
+
+function New-CackledaemonWD {
+    param(
+        [switch]$NoShortcuts
+    )
+    New-Item -Path $CackledaemonWD -ItemType directory
+
+    $ModuleDirectory = Split-Path -Path (Get-Module Cackledaemon).Path -Parent
+
+    Copy-Item (Join-Path $ModuleDirectory 'Configuration.ps1') (Join-Path $CackledaemonWD 'Configuration.ps1')
+
+    if (-not $NoShortcuts) {
+        Copy-Item (Join-Path $ModuleDirectory 'Shortcuts.csv') (Join-Path $CackledaemonWD 'Shortcuts.csv')
+    }
+}
+
+#+END_SRC
+
+Testing for this functionality attempts to ensure that the creation of shortcuts
+and file type association configs can be disabled, if the user wants them to be.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe "New-CackledaemonWD" {
+  BeforeEach {
+    Initialize-TestEnvironment
+    Remove-Item -Recurse "$TestDrive\Cackledaemon"
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  Context 'when shortcuts are enabled' {
+    It "creates a new and initialized working directory" {
+      New-CackledaemonWD
+
+      'TestDrive:\Cackledaemon' | Should -Exist
+      'TestDrive:\Cackledaemon\Configuration.ps1' | Should -Exist
+      'TestDrive:\Cackledaemon\Shortcuts.csv' | Should -Exist
+    }
+  }
+
+  Context 'when shortcuts are disabled' {
+    It "creates a new and initialized working directory without shortcuts" {
+      New-CackledaemonWD -NoShortcuts
+
+      'TestDrive:\Cackledaemon' | Should -Exist
+      'TestDrive:\Cackledaemon\Configuration.ps1' | Should -Exist
+      'TestDrive:\Cackledaemon\Shortcuts.csv' | Should -Not -Exist
+    }
+  }
+}
+
+#+END_SRC
+** Base Config File
+Most Cackledaemon settings live in a file called ~Configuration.ps1~. These
+settings can be loaded by sourcing the script. It includes settings for the
+installer, Emacs itself, log rotation for Cackledaemon and the Emacs daemon,
+daemon management and the tray icon.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Configuration.ps1
+# Installer Settings
+$WorkspaceDirectory = Join-Path $CackledaemonWD 'Workspace'
+$EmacsDownloadsEndpoint = 'https://ftp.gnu.org/gnu/emacs/windows/'
+$EmacsInstallLocation = Join-Path $Env:ProgramFiles 'emacs'
+$StartMenuPath = Join-Path $Env:AppData 'Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
+
+# Emacs Settings
+$HomeDirectory = $Env:UserProfile
+
+# Logging Settings
+$CackledaemonLogFile = Join-Path $CackledaemonWD 'Cackledaemon.log'
+$EmacsStdOutLogFile = Join-Path $CackledaemonWD 'EmacsStdOut.log'
+$EmacsStdErrLogFile = Join-Path $CackledaemonWD 'EmacsStdErr.log'
+$LogSize = 1mb
+$LogRotate = 4
+$LogCheckTime = 60  # Seconds
+
+# Daemon Management Settings
+$PidFile = Join-Path $CackledaemonWD 'DaemonPidFile.json'
+
+# Tray Icon Settings
+$NotifyTimeout = 5000
+#+END_SRC
+
+Some of these settings are generated by accessing the user's environment. The
+tests ensure that any of these values are as expected.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Configuration.ps1' {
+  BeforeEach {
+    Initialize-TestEnvironment
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  It 'defines base settings' {
+    . $CackledaemonConfigLocation
+
+    $WorkspaceDirectory | Should -Be "$TestDrive\Cackledaemon\Workspace"
+    $EmacsDownloadsEndpoint | Should -Be 'https://ftp.gnu.org/gnu/emacs/windows/'
+    $EmacsInstallLocation | Should -Be "$TestDrive\Program Files\emacs"
+    $StartMenuPath | Should -Be "$TestDrive\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs"
+
+    $CackledaemonLogFile | Should -Be "$TestDrive\Cackledaemon\Cackledaemon.log"
+    $EmacsStdOutLogFile | Should -Be "$TestDrive\Cackledaemon\EmacsStdOut.log"
+    $EmacsStdErrLogFile | Should -Be "$TestDrive\Cackledaemon\EmacsStdErr.log"
+    $LogSize | Should -Be 1mb
+    $LogRotate | Should -Be 4
+    $LogCheckTime | Should -Be 60
+
+    $NotifyTimeout | Should -Be 5000
+  }
+}
+
+#+END_SRC
+** Start Menu Shortcuts Config
+The desired state of Start menu shortcuts are stored in a CSV file. This file
+encodes the name of the shortcut, the name of the exe inside of Emacs' ~bin~
+directory, any arguments passed to that exe, and a description field. By
+default, Cackledaemon creates a shortcut for ~emacsclientw.exe~.
+
+#+BEGIN_SRC csv :tangle ./Cackledaemon/Shortcuts.csv
+#TYPE ShortcutCsvRecord
+"ShortcutName","EmacsBinaryName","ArgumentList","Description"
+EmacsClient,emacsclientw.exe,"[]",GNU EmacsClient: The client for the extensible self-documenting text editor
+#+END_SRC
+
+
+Note that the ~TYPE~ header is necessary in this CSV. This is because
+Cackledaemon uses [[https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/import-csv?view=powershell-5.1][Import-Csv]] to load the CSV data into a record type.
+Also note that the ~$ArgumentList~ is double-encoded as a JSON array -
+Cackledaemon uses [[https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/convertfrom-json?view=powershell-5.1][ConvertFrom-Json]] to convert the CSV field into a list.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+class ShortcutCsvRecord {
+  [string]$ShortcutName
+  [string]$EmacsBinaryName
+  [string]$ArgumentList
+  [string]$Description
+
+  ShortcutCsvRecord(
+    [string]$ShortcutName,
+    [string]$EmacsBinaryName,
+    [string]$ArgumentList,
+    [string]$Description
+  ) {
+    $this.ShortcutName = $ShortcutName
+    $this.EmacsBinaryName = $EmacsBinaryName
+    $this.ArgumentList = $ArgumentList
+    $this.Description = $Description
+  }
+}
+
+class ShortcutRecord {
+  [string]$ShortcutName
+  [string]$EmacsBinaryName
+  [string[]]$ArgumentList
+  [string]$Description
+
+  ShortcutRecord(
+    [string]$ShortcutName,
+    [string]$EmacsBinaryName,
+    [string[]]$ArgumentList,
+    [string]$Description
+  ) {
+    $this.ShortcutName = $ShortcutName
+    $this.EmacsBinaryName = $EmacsBinaryName
+    $this.ArgumentList = $ArgumentList
+    $this.Description = $Description
+  }
+}
+
+function Get-ShortcutsConfig {
+  $ShortcutsPath = Join-Path $CackledaemonWD 'Shortcuts.csv'
+
+  if (Test-Path $ShortcutsPath) {
+    Import-Csv -Path $ShortcutsPath | ForEach-Object {
+      New-Object ShortcutRecord $_.ShortcutName, $_.EmacsBinaryName, ($_.ArgumentList | ConvertFrom-Json), $_.Description
+    }
+  }
+}
+
+#+END_SRC
+
+Tests ensure that this deserialization works as expected.
+This deserialization will work as expected when the file exists, and will return
+a null config if the file is absent.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Get-ShortcutsConfig' {
+  BeforeEach {
+    Initialize-TestEnvironment
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  Context 'when there is a Shortcuts.csv' {
+    It 'loads shortcuts settings' {
+      $Config = Get-ShortcutsConfig
+
+      $Config | Should -Not -Be $null
+
+      $Config.length | Should -Be 1
+
+      $Config[0].ShortcutName | Should -Be 'EmacsClient'
+      $Config[0].EmacsBinaryName | Should -Be 'emacsclientw.exe'
+      $Config[0].ArgumentList | Should -Be @()
+      $Config[0].Description | Should -Be 'GNU EmacsClient: The client for the extensible self-documenting text editor'
+    }
+  }
+
+  Context "when there isn't a Shortcuts.csv" {
+    It 'returns null' {
+      Remove-Item "$CackledaemonWD\Shortcuts.csv"
+
+      $Config = Get-ShortcutsConfig
+
+      $Config | Should -Be $null
+    }
+  }
+}
+
+#+END_SRC
+* Job Management
+Cackledaemon uses [[https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_jobs?view=powershell-5.1][PowerShell jobs]] to run tasks, namely log rotation, in the
+background. It generally uses the standard job cmdlets, but wraps them in some
+convenience functions.
+
+The ~Enable-Job~ function is a wrapper around ~Start-Job~ that load the
+Cackledaemon library into the job and make use of Cackledaemon's logging
+facilities.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Enable-Job {
+  [CmdletBinding()]
+  param(
+    [Parameter(Position=0)]
+    [string]$Name,
+    [Parameter(Position=1)]
+    [ScriptBlock]$ScriptBlock
+  )
+
+  $Job = Get-Job -Name $Name -ErrorAction SilentlyContinue
+
+  if ($Job) {
+    Write-CDWarning ('{0} job already exists. Trying to stop and remove...' -f $Name)
+    Disable-Job -Name $Job.Name -ErrorAction Stop
+
+  }
+
+  $Job = Get-Job -Name $Name -ErrorAction SilentlyContinue
+
+  if ($Job) {
+    Write-LogError -Message ('{0} job somehow still exists - not attempting to start a new one.' -f $Name) `
+      -Category 'ResourceExists' `
+      -CategoryActivity 'Enable-Job' `
+      -CategoryReason 'UnstoppableJobException'
+  } else {
+    Start-Job `
+      -Name $Name `
+      -InitializationScript { Import-Module Cackledaemon } `
+      -ScriptBlock $ScriptBlock
+    }
+}
+
+#+END_SRC
+
+Tests ensure that running ~Enable-Job~ won't create two jobs, instead stopping
+and removing the current job before creating the new one.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe "Enable-Job" {
+  BeforeEach {
+    Initialize-TestEnvironment
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  Context "when a job doesn't exist" {
+    It "creates a new job" {
+      Stop-Job -Name 'testJob' -ErrorAction SilentlyContinue
+      Remove-Job -Name 'testJob' -ErrorAction SilentlyContinue
+
+      Enable-Job "testJob" {} -ErrorAction Stop
+
+      $Job = Get-Job -Name 'testJob'
+      $Job | Should -Not -Be $null
+
+      Stop-Job -Id $Job.Id
+      Remove-Job -Id $Job.Id
+    }
+  }
+
+  Context "when a job already exists" {
+    It 'disables and then creates a new job' {
+      Stop-Job -Name 'testJob' -ErrorAction SilentlyContinue
+      Remove-Job -Name 'testJob' -ErrorAction SilentlyContinue
+
+      Start-Job -Name 'testJob' -ScriptBlock {}
+
+      Enable-Job "testJob" {} -ErrorAction Stop -WarningVariable Warnings 3> $null
+
+      $Warnings | Should -Not -Be $null
+      $Warnings.Count | Should -Be 1
+
+      $Warnings[0].ToString() | Should -Be "testJob job already exists. Trying to stop and remove..."
+
+      $Job = Get-Job -Name 'testJob'
+
+      $Job | Should -Not -Be $null
+      $Job.length | Should -Be 1
+
+      Stop-Job -Id $Job.Id
+      Remove-Job -Id $Job.Id
+    }
+  }
+}
+
+#+END_SRC
+
+~Disable-Job~ is a wrapper around ~Stop-Job~ and ~Remove-Job~ - after a job is
+disabled it should be removed from PowerShell.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Disable-Job {
+  [CmdletBinding()]
+  param(
+    [Parameter(Position=0)]
+    [string]$Name
+  )
+
+  $Job = Get-Job -Name $Name -ErrorAction SilentlyContinue
+
+  if (-not $Job) {
+    Write-CDWarning ("{0} job doesn't exist. Doing nothing." -f $Name)
+    return
+  }
+
+  try {
+    Stop-Job -Name $Name -ErrorAction Stop
+    Remove-Job -Name $Name -ErrorAction Stop
+  } catch {
+    Write-CDError $_
+  }
+}
+
+#+END_SRC
+
+Tests ensure that ~Disable-Job~ is idempotent - if a job has already been
+removed, it will issue a warning but otherwise do nothing.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe "Disable-Job" {
+  Context "when a job exists" {
+    It "disables the job" {
+      Initialize-TestEnvironment
+
+      Stop-Job -Name 'testJob' -ErrorAction SilentlyContinue
+      Remove-Job -Name 'testJob' -ErrorAction SilentlyContinue
+
+      Start-Job -Name 'testJob' -ScriptBlock {}
+
+      Disable-Job "testJob" -ErrorAction Stop
+
+      $Job = Get-Job -Name 'testJob' -ErrorAction SilentlyContinue
+      $Job | Should -Be $null
+    }
+  }
+
+  Context "when a job has already been removed" {
+    It 'does nothing' {
+      Initialize-TestEnvironment
+
+      Stop-Job -Name 'testJob' -ErrorAction SilentlyContinue
+      Remove-Job -Name 'testJob' -ErrorAction SilentlyContinue
+
+      Disable-Job "testJob" -ErrorAction Stop -WarningVariable Warnings 3> $null
+
+      $Warnings | Should -Not -Be $null
+      $Warnings.length | Should -Be 1
+
+      $Warnings[0].ToString() | Should -Be "testJob job doesn't exist. Doing nothing."
+
+      $Job = Get-Job -Name 'testJob' -ErrorAction SilentlyContinue
+
+      $Job | Should -Be $null
+    }
+  }
+}
+
+#+END_SRC
+* Logging
+** Logger
+Cackledaemon's logger is bespoke, but relatively simple.
+
+It uses [[https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/write-information?view=powershell-5.1][Write-Information]] to generate [[https://docs.microsoft.com/en-us/dotnet/api/system.management.automation.informationrecord?view=powershellsdk-1.1.0][InformationRecords]], which it uses as a
+message envelope. The code uses ~Get-Command~ because of an edge case with
+[[https://github.com/jfhbrook/pseudo][PSeudo]], the library that Cackledaemon uses for privilege escalation.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function New-CDLogRecord {
+  [CmdletBinding()]
+  param(
+    [string]$Level = 'Info',
+    [object]$MessageData,
+    [string[]]$Tags = @()
+  )
+
+  if (-not @('Debug','Info','Warning','Error','Fatal').Contains($Level)) {
+    Write-Warning "New-CDLogRecord called with unrecognized level $Level"
+    $Level = 'Warning'
+  }
+
+  $WriteInformation = Get-Command 'Write-Information' -CommandType Cmdlet
+
+  & $WriteInformation $MessageData (@($Level) + $Tags) 6>&1
+}
+
+#+END_SRC
+
+
+Tests ensure that generating log records with an unrecognized logging level will
+still generate a record, but also generate a warning.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+$TimestampRegexp = '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{7}-\d{2}:\d{2}'
+
+Describe 'New-CDLogRecord' {
+  BeforeEach {
+    Initialize-TestEnvironment
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  Context 'when called with an unrecognized level' {
+    It 'warns and then returns a message at the warning level' {
+      $Record = New-CDLogRecord -Level 'InvalidLevel' -MessageData 'Test Message' -WarningVariable Warnings 3> $null
+
+      $Record.Tags | Should -HaveCount 1
+      $Record.Tags[0] | Should -Be 'Warning'
+
+      $Warnings | Should -Not -Be $null
+      $Warnings.Count | Should -Be 1
+
+      $Warnings[0].ToString() | Should -Be 'New-CDLogRecord called with unrecognized level InvalidLevel'
+    }
+  }
+}
+
+#+END_SRC
+
+Cackledaemon writes these ~InformationRecords~ to a log file based on parameters
+in the ~Configuration.ps1~ - by default to
+=$Env:AppData\Cackledaemon\Cackledaemon.log=.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Write-CDLog {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
+    [System.Management.Automation.InformationRecord]$InformationRecord
+  )
+
+  try {
+    . $CackledaemonConfigLocation
+  } catch {
+    Write-Warning 'Unable to load Cackledaemon configuration! Unable to write to log file.'
+    return
+  }
+
+  if ($InformationRecord) {
+    $Timestamp = (Get-Date -Date $InformationRecord.TimeGenerated -Format o)
+
+    $InformationRecord.MessageData | Out-String | ForEach-Object {
+      if ($_) {
+        $Line = '{0} [{1}] {2}' -f $Timestamp,($InformationRecord.Tags -join ':'),$_
+        Add-Content $CackledaemonLogFile -Value $Line
+      }
+    }
+  }
+}
+
+#+END_SRC
+
+Tests check that writing to the log fails gracefully when a ~Configuration.ps1~
+can't be found - instead, it will issue a warning to the Warning stream and do
+nothing.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Write-CDLog' {
+  BeforeEach {
+    Initialize-TestEnvironment
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  Context 'when the configuration is missing' {
+    It 'warns and does nothing' {
+      Remove-Item $CackledaemonConfigLocation
+
+      New-CDLogRecord -Message 'test log' | Write-CDLog -WarningVariable Warnings 3> $null
+
+      'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Not -Exist
+
+      $Warnings | Should -Not -Be $null
+      $Warnings.Count | Should -Be 1
+      $Warnings[0].ToString() | Should -Be 'Unable to load Cackledaemon configuration! Unable to write to log file.'
+    }
+  }
+}
+
+#+END_SRC
+
+The logger has five levels: debug, info, warning, error and fatal. All of these
+will write to the log - however, the first four will log to the Debug,
+Information, Warning and Error streams respectively, and the last will throw a
+[[https://docs.microsoft.com/en-us/powershell/scripting/developer/cmdlet/terminating-errors?view=powershell-5.1][terminating error]].
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Write-CDDebug {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
+    [string]$Message,
+    [string[]]$Tags = @()
+  )
+
+  New-CDLogRecord 'Debug' $Message $Tags | Write-CDLog
+  Write-Debug $Message
+}
+
+function Write-CDInfo {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
+    [object]$MessageData,
+    [string[]]$Tags = @()
+  )
+
+  New-CDLogRecord 'Info' $MessageData $Tags | Write-CDLog
+  Write-Information $MessageData $Tags
+}
+
+function Write-CDWarning {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
+    [string]$Message,
+    [string[]]$Tags = @()
+  )
+  New-CDLogRecord 'Warning' $Message $Tags | Write-CDLog
+  Write-Warning $Message
+}
+
+function Write-CDError {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
+    [System.Management.Automation.ErrorRecord]$ErrorRecord,
+    [string[]]$Tags = @()
+  )
+
+  New-CDLogRecord 'Error' $ErrorRecord $Tags | Write-CDLog
+  $PSCmdlet.WriteError($ErrorRecord)
+}
+
+function Write-CDFatal {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
+    [System.Management.Automation.ErrorRecord]$ErrorRecord,
+    [string[]]$Tags = @()
+  )
+  New-CDLogRecord 'Fatal' $ErrorRecord $Tags | Write-CDLog
+  $PSCmdlet.ThrowTerminatingError($ErrorRecord)
+}
+
+#+END_SRC
+
+Testing ensures that all of these logging functions can be called with their
+expected arguments and log something sensible to the file. Errors in particular
+contain rich data in an object called an [[https://docs.microsoft.com/en-us/dotnet/api/system.management.automation.errorrecord?view=powershellsdk-1.1.0][ErrorRecord]], such that we want to
+ensure that they contain the correct information. Fatal error handling also
+needs to ensure that the log is written to the file before the error is thrown.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+@('Debug', 'Info', 'Warning') | ForEach-Object {
+  Describe ('Write-CD{0}' -f $_) {
+    BeforeEach {
+      Initialize-TestEnvironment
+    }
+
+    AfterEach {
+      Restore-StandardEnvironment
+    }
+
+    It ('logs at the {0} level' -f $_) {
+      $Command = Get-Command "Write-CD${_}"
+      & $Command 'Test message' 3> $null
+
+      "$TestDrive\Cackledaemon\Cackledaemon.log" | Should -FileContentMatch "^$TimestampRegexp \[${_}\] Test message$"
+    }
+  }
+}
+
+Describe 'Write-CDError' {
+  BeforeEach {
+    Initialize-TestEnvironment
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  It 'logs at the Error level' {
+    $Exception = New-Object Exception 'Test exception'
+    $ErrorRecord = New-Object System.Management.Automation.ErrorRecord $Exception,'testErrorId','InvalidOperation',$null
+
+    Write-CDError $ErrorRecord 2> $null
+
+    $Error[0].ToString() | Should -Be 'Test exception'
+    $Error[0].CategoryInfo.Category.ToString() | Should -Be 'InvalidOperation'
+
+    'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -Exist
+    'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -FileContentMatch "^$TimestampRegexp \[Error\] Test exception$"
+  }
+}
+
+Describe 'Write-CDFatal' {
+  BeforeEach {
+    Initialize-TestEnvironment
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  It 'logs at the Fatal level and throws an Exception' {
+    $Exception = New-Object Exception 'Test exception'
+    $ErrorRecord = New-Object System.Management.Automation.ErrorRecord $Exception,'testErrorId','InvalidOperation',$null
+
+    { Write-CDFatal $ErrorRecord } | Should -Throw Exception
+
+    $Error[0].ToString() | Should -Be 'Test exception'
+    $Error[0].CategoryInfo.Category.ToString() | Should -Be 'InvalidOperation'
+
+    'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -Exist
+    'TestDrive:/Cackledaemon/Cackledaemon.log' | Should -FileContentMatch "^$TimestampRegexp \[Fatal\] Test exception$"
+  }
+}
+
+#+END_SRC
+** Log Rotation
+Cackledaemon has functionality to rotate logs collected from Emacs and generated
+by Cackledaemon internally.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Invoke-LogRotate {
+  [CmdletBinding()]
+  param()
+
+  . $CackledaemonConfigLocation
+
+  @($CackledaemonLogFile, $EmacsStdoutLogFile, $EmacsStdErrLogFile) | ForEach-Object {
+    $LogFile = $_
+
+    if ((Test-Path $LogFile) -and (Get-Item $LogFile).Length -ge $LogSize) {
+      Write-CDInfo ('Rotating {0}...' -f $LogFile)
+
+      ($LogRotate..0) | ForEach-Object {
+        $Current = $(if ($_) {
+                       '{0}.{1}' -f $LogFile, $_
+                     } else { $LogFile })
+
+        $Next = '{0}.{1}' -f $LogFile, ($_ + 1)
+
+        if (Test-Path $Current) {
+          Write-CDInfo ('Copying {0} to {1}...' -f $Current, $Next)
+
+          Copy-Item -Path $Current -Destination $Next
+        }
+      }
+
+      Write-CDInfo ('Truncating {0}...' -f $LogFile)
+
+      Clear-Content $LogFile
+
+      $StaleLogFile = '{0}.{1}' -f $LogFile, ($LogRotate + 1)
+
+      if (Test-Path $StaleLogFile) {
+              Write-CDInfo ('Removing {0}...' -f $StaleLogFile)
+
+        Remove-Item $StaleLogFile
+      }
+
+      Write-CDInfo 'Done.'
+    }
+  }
+}
+
+#+END_SRC
+
+Cackledaemon more or less tries to emulate a typical [[https://linux.die.net/man/8/logrotate][logrotate]] config. It
+rotates a log if it's at or over a certain size, retains some finite count of
+log files, and drops the last one if necessary. These settings live in
+~Configuration.ps1~ and default to rotating at 1mb and retaining up for 5 log
+files.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Invoke-LogRotate' {
+  BeforeEach {
+    Initialize-TestEnvironment
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  It 'rotates the logs' {
+    Add-Content 'TestDrive:\Cackledaemon\Configuration.ps1' '$LogSize = 1'
+    Add-Content 'TestDrive:\Cackledaemon\Configuration.ps1' '$LogRotate = 2'
+
+    Write-CDInfo 'Testing 1'
+
+    'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Exist
+    'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -FileContentMatch 'Testing 1'
+    'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -Not -Exist
+    'TestDrive:\Cackledaemon\EmacsStdOut.log' | Should -Not -Exist
+    'TestDrive:\Cackledaemon\EmacsStdErr.log' | Should -Not -Exist
+
+    Invoke-LogRotate
+
+    'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Exist
+    'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Not -FileContentMatch 'Testing 1'
+    'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -Exist
+    'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -FileContentMatch 'Testing 1'
+
+    Write-CDInfo 'Testing 2'
+    Invoke-LogRotate
+
+    'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Exist
+    'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Not -FileContentMatch 'Testing 2'
+    'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -Exist
+    'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -FileContentMatch 'Testing 2'
+    'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -Exist
+    'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -FileContentMatch 'Testing 1'
+
+    Write-CDInfo 'Testing 3'
+    Invoke-LogRotate
+
+    'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Exist
+    'TestDrive:\Cackledaemon\Cackledaemon.log' | Should -Not -FileContentMatch 'Testing 3'
+    'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -Exist
+    'TestDrive:\Cackledaemon\Cackledaemon.log.1' | Should -FileContentMatch 'Testing 3'
+    'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -Exist
+    'TestDrive:\Cackledaemon\Cackledaemon.log.2' | Should -FileContentMatch 'Testing 2'
+    'TestDrive:\Cackledaemon\Cackledaemon.log.3' | Should -Not -Exist
+  }
+}
+
+#+END_SRC
+
+Cackledaemon uses PowerShell jobs to manage log rotation. By default the job
+checks the logs every 60 seconds, but this is configurable inside the
+~Configuration.ps1~.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Enable-CDLogRotateJob {
+  [CmdletBinding()]
+  param()
+
+  Enable-Job 'CDLogRotateJob' {
+    . $CackledaemonConfigLocation
+
+    while ($True) {
+      Invoke-LogRotate
+      Write-CDDebug ('CDLogRotateJob sleeping for {0} seconds.' -f $LogCheckTime)
+      Start-Sleep -Seconds $LogCheckTime
+    }
+  }
+}
+
+function Disable-CDLogRotateJob {
+  [CmdletBinding()]
+  param()
+
+  Disable-Job 'CDLogRotateJob'
+}
+
+#+END_SRC
+* Installing Emacs
+** Gotchas and Caveats
+On a certain level, installing Emacs is a matter of downloading an official zip
+file and unpacking it into the system's ~Program Files~ directory. Beyond that,
+we can register executables with Windows, set some environment variables and
+populate the Start menu.
+
+Emacs is fundamentally designed to run on Unix-like systems, meaning that
+sometimes the way Windows works violates Emacs' base expectations. This
+introduces a few surprises and caveats. Most of these are handled by
+Cackledaemon and the details can be found under the relevant sub-headings.
+Others, however, are left as an exercise for the reader.
+
+First, ~emacs.exe~ and ~emacsclient.exe~ are written such that they write to
+stdout/stderr, but Windows will run programs that try to do this with a
+console. To work around this, Emacs ships with ~runemacs.exe~ and
+~emacsclientw.exe~, respectively, which wrap the standard entry points in
+Windows-specific ones.
+
+Given no other signal, Emacs will open in =/WINDOWS/system32= by default. There
+are a number of ways around this:
+
+- Open Emacs inside of a PowerShell or cmd prompt - in this case, Emacs will
+  open in the current working directory
+- Add a =cd= call to your Emacs config, which will change Emacs' working
+  directory whenever it is loaded
+- Set the =default-directory= variable in your Emacs config. This will cause
+  Emacs to default to opening in that directory when there isn't an associated
+  current working directory
+- If opening Emacs with a shortcut, the starting directory of that shortcut may
+  be set to the desired directory
+
+File associations - that is, what programs Windows will use to try to open
+things like org files and so on - can only be made with ~.exe~, ~.bat~, ~.com~
+and ~.pif~ files. This means that if you want to have files opened by Emacs
+given specific CLI flags via the "Open With..." menu - for example - that you
+will either need to write compiled code or batch scripts.
+
+For more details, refer to:
+
+- [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Windows-Startup.html][Windows Startup]] in the Emacs manual
+- [[https://git.savannah.gnu.org/cgit/emacs.git/tree/nt/][The nt directory]] in Emacs' source tree, particularly ~runemacs.c~ and ~addpm.c~
+- [[https://www.emacswiki.org/emacs/MsWindowsInstallation][MS Windows Installation]] in the Emacs wiki
+- [[https://www.emacswiki.org/emacs/EmacsMsWindowsIntegration][Emacs MS Windows Integration]] in the Emacs wiki
+
+** Checking if Emacs is Already Installed
+One check we can do to see if Emacs is already installed is to see if
+~emacs.exe~ is in the expected location given a configured
+=$EmacsInstallLocation=.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Test-EmacsExe {
+  . $CackledaemonConfigLocation
+
+  Test-Path (Join-Path $EmacsInstallLocation 'bin\emacs.exe')
+}
+
+#+END_SRC
+
+This only looks for Emacs in the configured install location. This means that if
+an unmanaged Emacs - that is, an Emacs install not in the expected location and
+likely not installed by Cackledaemon - is installed elsewhere and is on your
+~PATH~, this function will not find it. This means that functionality which
+checks for Emacs being installed will ignore unmanaged Emacs installs.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Test-EmacsExe' {
+  BeforeEach {
+    Initialize-TestEnvironment
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  It 'searches for emacs.exe in the correct location' {
+    Mock -ModuleName Cackledaemon Test-Path { $True }
+
+    Test-EmacsExe | Should -Be $True
+
+    Assert-MockCalled -ModuleName Cackledaemon Test-Path `
+      -Times 1 `
+      -ParameterFilter { $Path -eq "$TestDrive\Program Files\emacs\bin\emacs.exe"}
+  }
+}
+
+#+END_SRC
+** Versions
+Emacs exposes versions of the form ~{major).{minor}~. We use a class which
+implements the [[https://docs.microsoft.com/en-us/dotnet/api/system.icomparable?view=netframework-4.8][IComparable]] interface to represent these versions and to do basic
+comparisons between them.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+class Version : IComparable {
+  [int]$Major
+  [int]$Minor
+
+  Version([int64]$Major, [int64]$Minor) {
+    $this.Major = $Major
+    $this.Minor = $Minor
+  }
+
+  [int]CompareTo([object]$Other) {
+    if ($Other -eq $null) {
+      return 1
+    }
+
+    $Other = [Version]$Other
+
+    if ($this.Major -gt $Other.Major) {
+      return 1
+    } elseif ($this.Major -lt $Other.Major) {
+      return -1
+    } elseif ($this.Minor -gt $Other.Minor) {
+      return 1
+    } elseif ($this.Minor -lt $Other.Minor) {
+      return -1
+    } else {
+      return 0
+    }
+  }
+
+  [string]ToString() {
+    return 'v{0}.{1}' -f $this.Major, $this.Minor
+  }
+}
+
+#+END_SRC
+
+While PowerShell allows for the use of classes, they can't be exported.
+Therefore, we have a factory function which can create new Version objects.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function New-Version {
+  param(
+    [int]$Major,
+    [int]$Minor
+  )
+
+  return New-Object Version $Major, $Minor
+}
+
+#+END_SRC
+
+The Emacs exe will report versions if installed. We can extract them with a
+regexp and otherwise fall back to reporting a null version, which will usually
+do the right thing when compared to a =Version= instance.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Get-EmacsExeVersion {
+  if (Test-EmacsExe) {
+    . $CackledaemonConfigLocation
+
+    $EmacsExe = Join-Path $EmacsInstallLocation 'bin\emacs.exe'
+    if ((& $EmacsExe --version)[0] -match '^GNU Emacs (\d+)\.(\d+)$') {
+      New-Version $Matches[1] $Matches[2]
+    }
+  }
+}
+
+#+END_SRC
+** Official Downloads
+Downloads are also represeted with a class implementing IComparable, which
+delegates comparisons to an underlying Version. This is so that we can easily
+find the latest download.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+class Download : IComparable {
+  [Version]$Version
+  [string]$Href
+
+  Download([int64]$Major, [int64]$Minor, [string]$Href) {
+    $this.Version = New-Object Version $Major, $Minor
+    $this.Href = $Href
+  }
+
+  [int]CompareTo([object]$Other) {
+    if ($Other -eq $null) {
+      return 1
+    }
+
+    $Other = [Download]$Other
+
+    return $this.Version.CompareTo($Other.Version)
+  }
+
+  [string]ToString() {
+    return 'Download($Version={0}; $Href={1})' -f $this.Version, $this.Href
+  }
+}
+
+#+END_SRC
+
+Downloads can also be created with a factory function.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function New-Download {
+  param(
+    [int]$Major,
+    [int]$Minor,
+    [string]$Href
+  )
+
+  New-Object Download $Major, $Minor, $Href
+}
+
+#+END_SRC
+
+Emacs hosts downloads on an Apache webserver running [[https://trisquel.info/][Trisquel Linux]], which I
+personally find charming. It turns out that Apache directory listings can be
+casually scraped by PowerShell using [[https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/invoke-webrequest?view=powershell-5.1][Invoke-WebRequest]].
+
+It's worth noting that Cackledaemon only attempts to handle native Windows
+x86_64 builds. The first major version of Emacs with such builds is Emacs 25.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Get-EmacsDownload {
+  . $CackledaemonConfigLocation
+
+  return (Invoke-WebRequest $EmacsDownloadsEndpoint).Links | ForEach-Object {
+    if ($_.href -match '^emacs-(\d+)/$') {
+      $MajorPathPart = $_.href
+
+      if ([int]$Matches[1] -lt 25) {
+        return
+      }
+
+      (Invoke-WebRequest ($EmacsDownloadsEndpoint + $MajorPathPart)).Links | ForEach-Object {
+        if ($_.href -match '^emacs-(\d+)\.(\d+)-x86_64\.zip$') {
+          $Href = $EmacsDownloadsEndpoint + $MajorPathPart + $_.href
+          return New-Download $Matches[1] $Matches[2] $Href
+        }
+      }
+    }
+  } | Where-Object {$_}
+}
+
+#+END_SRC
+
+Testing this functionality is "interesting". In order to test the logic of our
+download scraper without actually scraping the Emacs downloads server every
+time, we use a technique similar to Ruby's [[https://github.com/vcr/vcr][vcr]] library but implemented on an
+ad-hoc basis. It works by storing results for a given web request in a file
+inside the ~.\Tapes~ folder in this repository. If the file doesn't exist, the
+test will make the actual web request and save the contents to the relevant file
+using ~Convert-ToJson~. If the file *does* exist, it will load it with
+~ConvertFrom-Json~ and create a mock response object.
+
+Raw [[https://docs.microsoft.com/en-us/dotnet/api/microsoft.powershell.commands.htmlwebresponseobject?view=powershellsdk-1.1.0][HtmlWebResponse]] objects are not serializable to JSON by PowerShell due to
+circular keys. A more comprehensive library would need to take great care to
+serialize and hydrate these objects, but because we only use the Links property
+of the object we can extract just this one property to save to our tapes.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Get-EmacsDownload' {
+  BeforeEach {
+    Initialize-TestEnvironment
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  It 'fetches emacs downloads' {
+    Mock -ModuleName Cackledaemon Invoke-WebRequest {
+      if (-not (Test-Path '.\Tapes')) {
+        New-Item -Type Directory '.\Tapes'
+      }
+
+      $TapePath = Join-Path '.\Tapes' ('{0}.json' -f [uri]::EscapeDataString($Uri))
+      $IWR = Get-Command Invoke-WebRequest -CommandType Cmdlet
+
+      if (Test-Path $TapePath) {
+        return (Get-Content $TapePath | ConvertFrom-Json)
+      } else {
+        $Result = & $IWR $Uri
+        $Result | ForEach-Object {
+          @{
+            Links=$_.Links
+          }
+        } | ConvertTo-Json | Set-Content -Path $TapePath
+        return $Result
+      }
+    }
+
+    $Downloads = Get-EmacsDownload
+    $Downloads | Should -Not -Be $null
+    $Downloads.Count | Should -BeGreaterOrEqual 1
+    $Downloads | ForEach-Object {
+      $_.Href | Should -Not -Be $null
+      $_.Version | Should -Not -Be $null
+    }
+  }
+}
+#+END_SRC
+
+Finding the latest available Emacs download is a matter of getting a list of all
+supported Emacs downloads and using [[https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/measure-object?view=powershell-5.1][Measure-Object]] to find the largest one.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Get-LatestEmacsDownload {
+  (Get-EmacsDownload | Measure-Object -Maximum).Maximum
+}
+
+#+END_SRC
+
+~Measure-Object~ only works when the IComparable interface on the underlying
+downloads object is implemented correctly, so testing ~Get-LatestEmacsDownload~
+is really testing the Download class.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Get-LatestEmacsDownload' {
+  BeforeEach {
+    Initialize-TestEnvironment
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  It 'reports the latest emacs download' {
+    Mock -ModuleName Cackledaemon Get-EmacsDownload {
+      New-Download 1 3 '1.3'
+      New-Download 2 1 '2.1'
+      New-Download 2 2 '2.2'
+    }
+
+    $LatestDownload = Get-LatestEmacsDownload
+    $LatestDownload | Should -Not -Be $null
+    $LatestDownload.Href | Should -Not -Be $null
+    $LatestDownload.Version | Should -Not -Be $null
+    $LatestDownload.Version.Major | Should -Be 2
+    $LatestDownload.Version.Minor | Should -Be 2
+  }
+}
+
+#+END_SRC
+** Workspace Management
+In order to effectively download, unpack and install Emacs downloads, we need a
+handful of directories to store everything. We use a class to represent the
+components of the required directory structure and some helper functions to
+manage setup and teardown.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+class Workspace {
+  [System.IO.DirectoryInfo]$Root
+  [System.IO.DirectoryInfo]$Archives
+  [System.IO.DirectoryInfo]$Installs
+  [System.IO.DirectoryInfo]$Backups
+
+  Workspace([string]$Path) {
+    $ArchivesPath = Join-Path $Path 'Archives'
+    $InstallsPath = Join-Path $Path 'Installs'
+    $BackupsPath = Join-Path $Path 'Backups'
+
+    $this.Root = Get-Item $Path
+    $this.Archives = Get-Item $ArchivesPath
+    $this.Installs = Get-Item $InstallsPath
+    $this.Backups = Get-Item $BackupsPath
+  }
+
+  [string]GetKey([Version]$Version) {
+    return 'emacs-{0}.{1}-x86_64' -f $Version.Major, $Version.Minor
+  }
+
+  [string]GetArchivePath([Version]$Version) {
+    return Join-Path $this.Archives ('{0}.zip' -f $this.GetKey($Version))
+  }
+
+  [boolean]TestArchive([Version]$Version) {
+    return Test-Path $this.GetArchivePath($Version)
+  }
+
+  [System.IO.FileInfo]GetArchive([Version]$Version) {
+    return Get-Item $this.GetArchivePath($Version)
+  }
+
+  [string]GetInstallPath([Version]$Version) {
+    return Join-Path $this.Installs $this.GetKey($Version)
+  }
+
+  [boolean]TestInstall([Version]$Version) {
+    return Test-Path $this.GetInstallPath($Version)
+  }
+
+  [System.IO.DirectoryInfo]GetInstall([Version]$Version) {
+    return Get-Item $this.GetInstallPath($Version)
+  }
+}
+
+#+END_SRC
+
+As with Versions and Downloads, interactions with the Workspace class need to be
+exposed as functions in order to be exported. However, Workspaces have a
+significantly more complicated lifecycle and have state inherently tied with the
+system's directory structure.
+
+First, we can check if a workspace directory structure has been created by
+seeing if the expected path exists. This path is configurable via
+~Configuration.ps1~.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Test-Workspace {
+  . $CackledaemonConfigLocation
+
+  Test-Path $WorkspaceDirectory
+}
+
+#+END_SRC
+
+If the directory structure exists, we can create a new Workspace object and
+point it to that directory structure.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Get-Workspace {
+  . $CackledaemonConfigLocation
+
+  return New-Object Workspace $WorkspaceDirectory
+}
+
+#+END_SRC
+
+However, if that directory structure *doesn't* exist, the Workspace object will
+fail to initialize, because the class expects it to exist. Therefore, we use a
+factory function to create those directories.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function New-Workspace {
+  . $CackledaemonConfigLocation
+
+  $ArchivesPath = Join-Path $WorkspaceDirectory 'Archives'
+  $InstallsPath = Join-Path $WorkspaceDirectory 'Installs'
+  $BackupsPath = Join-Path $WorkspaceDirectory 'Backups'
+
+  New-Item -Type Directory $WorkspaceDirectory | Out-Null
+
+  New-Item -Type Directory $ArchivesPath | Out-Null
+  New-Item -Type Directory $InstallsPath | Out-Null
+  New-Item -Type Directory $BackupsPath | Out-Null
+
+  return New-Object Workspace $WorkspaceDirectory
+}
+
+#+END_SRC
+
+There isn't a use case for removing workspaces outside of testing, so it's
+unimplemented in the main module.
+
+Workspaces created with ~New-Workspace~ or loaded with ~Get-Workspace~ should
+be associated with directories for archives, unpacked installs and backed up installs from
+the system.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Workspace' {
+  $TestVersion = New-Version 26 3
+  $TestKey = 'emacs-26.3-x86_64'
+  $TestArchive = "$TestDrive\Cackledaemon\Workspace\Archives\emacs-26.3-x86_64.zip"
+  $TestInstall = "$TestDrive\Cackledaemon\Workspace\Installs\emacs-26.3-x86_64"
+  $TestWorkspace = $null
+
+  BeforeEach {
+    Initialize-TestEnvironment
+    $TestWorkspace = New-Workspace
+  }
+
+  AfterEach {
+    Remove-Item $TestWorkspace.Root -Recurse
+    Restore-StandardEnvironment
+  }
+
+  It 'contains the expected directories' {
+    'TestDrive:\Cackledaemon\Workspace' | Should -Exist
+    'TestDrive:\Cackledaemon\Workspace\Archives' | Should -Exist
+    'TestDrive:\Cackledaemon\Workspace\Installs' | Should -Exist
+    'TestDrive:\Cackledaemon\Workspace\Backups' | Should -Exist
+  }
+
+  It 'can get an existing workspace' {
+    Get-Workspace | Should -Not -Be Null
+  }
+
+#+END_SRC
+
+Workspaces can generate a "key" for a given version, a slug that encodes the
+associated version of Emacs and intended to match with the upstream naming
+scheme from the official downloads server.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+  It 'can generate a key from a version' {
+    $TestWorkspace.GetKey($TestVersion) | Should -Be 'emacs-26.3-x86_64'
+  }
+
+#+END_SRC
+
+
+Archives - that is, zip files - are put in the Archives directory, and can be
+queried based on the version and its associated key.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+  It 'can generate an archive path from a version' {
+    $TestWorkspace.GetArchivePath($TestVersion) | Should -Be $TestArchive
+  }
+
+  Context "when an archive doesn't exist" {
+    It 'can test an archive path from a version' {
+      $TestWorkspace.TestArchive($TestVersion) | Should -Be $False
+    }
+  }
+
+  Context 'when an archive exists' {
+    BeforeEach {
+      New-Item $TestArchive
+    }
+
+    It 'can test an archive path from a version' {
+      $TestWorkspace.TestArchive($TestVersion) | Should -Be $True
+    }
+
+    It 'can get an archive from a version' {
+      $TestWorkspace.GetArchive($TestVersion) | Should -Not -Be $null
+    }
+  }
+
+#+END_SRC
+
+The results of unpacking archives are kept in the Installs directory and can be
+copied directly to the intended install location. They can also be queried based
+on version.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+  It 'can generate an install path from a version' {
+    $TestWorkspace.GetInstallPath($TestVersion) | Should -Be $TestInstall
+  }
+
+  Context "when an install doesn't exist" {
+    It 'can test an install path from a version' {
+      $TestWorkspace.TestInstall($TestVersion) | Should -Be $False
+    }
+  }
+
+  Context 'when an install exists' {
+    BeforeEach {
+      New-Item -Type Directory $TestInstall
+    }
+
+    It 'can test an install path from a version' {
+      $TestWorkspace.TestInstall($TestVersion) | Should -Be $True
+    }
+
+    It 'can get an install from a version' {
+      $TestWorkspace.GetInstall($TestVersion) | Should -Not -Be $null
+    }
+  }
+}
+
+#+END_SRC
+** Downloading and Extracting
+Given a workspace and an upstream download, we can use ~Invoke-WebRequest~ to
+download the zip files.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function New-EmacsArchive {
+  param(
+    [Parameter(Position=0)]
+    [Download]$Download
+  )
+
+  $Workspace = Get-Workspace
+
+  $Archive = $Workspace.GetArchivePath($Download.Version)
+
+  Invoke-WebRequest `
+    -Uri $Download.Href `
+    -OutFile $Archive | Out-Null
+
+  return Get-Item $Archive
+}
+
+#+END_SRC
+
+An integration test for this functionality would be very network intensive and
+take a long time, so we simply ensure that ~Invoke-WebRequest~ is called with
+the correct arguments.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'New-EmacsArchive' {
+  $TestWorkspace = $null
+  $TestDownload = New-Download 26 3 'https:\\test_url'
+  $ArchivePath = "$TestDrive\Cackledaemon\Workspace\Archives\emacs-26.3-x86_64.zip"
+
+  BeforeEach {
+    Initialize-TestEnvironment
+    $TestWorkspace = New-Workspace
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  It 'can download an Emacs archive' {
+    Mock -Module Cackledaemon Invoke-WebRequest {
+      New-Item $OutFile
+    }
+
+    $Archive = New-EmacsArchive $TestDownload
+
+    $Archive | Should -Not -Be $null
+    $ArchivePath | Should -Exist
+    $Archive.FullName | Should -Be $ArchivePath
+
+    Assert-MockCalled -Module Cackledaemon Invoke-WebRequest `
+      -Times 1 `
+      -ParameterFilter { $Uri -eq 'https:\\test_url' }
+  }
+}
+
+#+END_SRC
+
+Once an archive is downloaded, we can use [[https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.archive/expand-archive?view=powershell-5.1][Expand-Archive]] to unpack it.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Export-EmacsArchive {
+  param(
+    [Parameter(Position=0)]
+    [string]$Path
+  )
+
+  $Workspace = Get-Workspace
+
+  $Key = [IO.Path]::GetFileNameWithoutExtension($Path)
+
+  $Destination = Join-Path $Workspace.Installs.FullName $Key
+
+  Expand-Archive -Path $Path -DestinationPath $Destination
+
+  return Get-Item $Destination
+}
+
+#+END_SRC
+
+When testing this functionality, we want to ensure that given an archive item,
+we put the expanded contents in the correct location.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Export-EmacsArchive' {
+  $TestWorkspace = $null
+  $TestDownload = New-Download 26 3 'https:\\test_url'
+  $ArchivePath = "$TestDrive\Cackledaemon\Workspace\Archives\emacs-26.3-x86_64.zip"
+  $TestArchive = $null
+  $InstallPath = "$TestDrive\Cackledaemon\Workspace\Installs\emacs-26.3-x86_64"
+
+  BeforeEach {
+    Initialize-TestEnvironment
+    $TestWorkspace = New-Workspace
+    $TestArchive = New-Item $ArchivePath
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  It 'can extract an Emacs archive' {
+    Mock -Module Cackledaemon Expand-Archive {
+      New-Item -Type Directory 'TestDrive:\Cackledaemon\Workspace\Installs\emacs-26.3-x86_64' | Out-Null
+    }
+
+    $Install = Export-EmacsArchive $TestArchive
+
+    Assert-MockCalled -Module Cackledaemon Expand-Archive `
+      -Times 1 `
+      -ParameterFilter { $Path -eq $ArchivePath -and $DestinationPath -eq $InstallPath }
+
+    $Install.FullName | Should -Be $InstallPath
+  }
+}
+
+#+END_SRC
+
+Once an archive is expanded, installing is a matter of moving the existing
+install out of the way and moving the new one into its place.
+
+
+Note that by default this installs Emacs in ~Program Files~ and so will need
+Administrator privileges.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Update-EmacsInstall {
+  param(
+    [string]$Path
+  )
+
+
+  $Source = Get-Item -ErrorAction Stop $Path
+
+  . $CackledaemonConfigLocation
+
+  $Workspace = Get-Workspace
+
+  $Backup = Join-Path $Workspace.Backups ('emacs-{0}' -f (Get-Date -Format 'yyyyMMddHHmmss'))
+
+  if (Test-Path $EmacsInstallLocation -ErrorAction Stop) {
+    Copy-Item $EmacsInstallLocation $Backup -ErrorAction Stop
+    Remove-Item -Recurse $EmacsInstallLocation -ErrorAction Stop
+  }
+
+  Move-Item $Source $EmacsInstallLocation -ErrorAction Stop
+  Remove-Item -Recurse $Backup -ErrorAction SilentlyContinue
+
+  return Get-Item $EmacsInstallLocation
+}
+
+#+END_SRC
+
+This step will succeed whether or not there is an existing install. If there's
+an existing install, it will be moved to the Backups folder in the Workspace
+first, and then cleaned up after the move is successful. If the move fails for
+any reason, the backup should still exist and the user can manually intervene.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Update-EmacsInstall' {
+  $TestWorkspace = $null
+  $InstallPath = "$TestDrive\Cackledaemon\Workspace\Installs\emacs-26.3-x86_64"
+  $TestInstall = $null
+
+  BeforeEach {
+    Initialize-TestEnvironment
+    New-Workspace
+    $TestInstall = New-Item -Type Directory 'TestDrive:\Cackledaemon\Workspace\Installs\emacs-26.3-x86_64'
+    New-Item 'TestDrive:\Cackledaemon\Workspace\Installs\emacs-26.3-x86_64\NewInstall'
+  }
+
+  AfterEach {
+    Remove-Item -Recurse 'TestDrive:\Program Files\emacs' -ErrorAction Continue
+    Restore-StandardEnvironment
+  }
+
+  Context "when there isn't an existing Emacs install" {
+    It 'can install Emacs' {
+      'TestDrive:\Program Files\emacs' | Should -Not -Exist
+
+      Update-EmacsInstall $InstallPath
+
+      'TestDrive:\Program Files\emacs' | Should -Exist
+      'TestDrive:\Program Files\emacs\NewInstall' | Should -Exist
+    }
+  }
+
+  Context 'when there is an existing Emacs install' {
+    It 'can update Emacs' {
+      New-Item -Type Directory 'TestDrive:\Program Files\emacs'
+      New-Item 'TestDrive:\Program Files\emacs\OldInstall'
+
+      Update-EmacsInstall $InstallPath
+
+      'TestDrive:\Program Files\emacs\NewInstall' | Should -Exist
+      'TestDrive:\Program Files\emacs\OldInstall' | Should -Not -Exist
+      'TestDrive:\Cackledaemon\Workspace\Backups\*' | Should -Not -Exist
+    }
+  }
+}
+
+#+END_SRC
+** Environment Variables
+*** PATH Environment Variable
+As in Linux and OSX, Windows uses a ~Path~ variable to resolve commands in cmd
+and PowerShell. The ~Path~ environment variable can be set for either the
+current user or system-wide. We implement the user version because it doesn't
+require admin privileges and leaves this as a choice for individual users.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Set-EmacsPathEnvVariable {
+  [CmdletBinding()]
+  param()
+
+  . $CackledaemonConfigLocation
+
+  $Path = Join-Path $EmacsInstallLocation 'bin'
+
+  $ExistingEmacs = Get-Command 'emacs.exe' -ErrorAction SilentlyContinue
+
+  if ($ExistingEmacs) {
+    $ExistingEmacsBinDir = Split-Path $ExistingEmacs.Source -Parent
+  }
+
+  if ($ExistingEmacs -and -not ($ExistingEmacsBinDir -eq $Path)) {
+    Write-CDWarning ('An unmanaged Emacs is already installed at {0} - this may cause unexpected behavior.' -f $ExistingEmacsBinDir)
+  }
+
+  $PathProperty = (Get-ItemProperty -Path 'HKCU:\Environment' -Name 'Path')
+  $PathParts = $PathProperty.Path.Split(';') | Where-Object { $_ }
+
+  $ExistingEmacsPathPart = $PathParts | Where-Object { $_ -eq $Path }
+
+  if ($ExistingEmacsPathPart) {
+    Write-CDInfo 'Emacs is already in the PATH - no changes necessary.'
+  } else {
+    $PathProperty.Path += ($Path + ';')
+
+    Set-ItemProperty -Path 'HKCU:\Environment' -Name 'Path' -Value $PathProperty
+  }
+}
+
+#+END_SRC
+
+This function touches the registry, so we want to be careful. When Emacs isn't
+in the user's path, it should add the path to the registry key.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Set-EmacsPathEnvVariable' {
+  $EmacsPath = $null
+
+  BeforeEach {
+    Initialize-TestEnvironment
+    $EmacsPath = "$TestDrive\Program Files\emacs\bin"
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  Context 'when Emacs is not in the PATH' {
+    It 'should add Emacs to the PATH' {
+      Mock -Module Cackledaemon Get-Command { $False }
+      Mock -Module Cackledaemon Get-ItemProperty {
+        class FakePathProperty {
+          [string]$Path
+        }
+
+        $PathProperty = New-Object FakePathProperty
+        $PathProperty.Path = "$TestDrive\Program Files\CoolProgram\bin;$TestDrive\Program Files (x86)\LameProgram;"
+
+        return $PathProperty
+      }
+      Mock -Module Cackledaemon Set-ItemProperty {
+        $Value.Path | Should -Be "$TestDrive\Program Files\CoolProgram\bin;$TestDrive\Program Files (x86)\LameProgram;$TestDrive\Program Files\emacs\bin;"
+      }
+
+      Set-EmacsPathEnvVariable -WarningVariable Warnings
+
+      $Warnings | Should -Be $null
+
+      Assert-MockCalled -Module Cackledaemon Get-ItemProperty `
+        -Times 1 `
+        -ParameterFilter {$Path -eq 'HKCU:\Environment' -and $Name -eq 'Path'}
+
+      Assert-MockCalled -Module Cackledaemon Set-ItemProperty `
+        -Times 1 `
+        -ParameterFilter { $Path -eq 'HKCU:\Environment' -and $Name -eq 'Path' -and -not($Value -eq $null) }
+    }
+  }
+
+#+END_SRC
+
+However, if Emacs is already in the user's path, then this step should be
+idempotent and do nothing.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+  Context 'when Emacs is already in the PATH' {
+    It 'should do nothing' {
+      Mock -Module Cackledaemon Get-Command {
+        class FakeCommand {
+          [string]$Source
+        }
+
+        $Command = New-Object FakeCommand
+        $Command.Source = "$TestDrive\Program Files\emacs\bin\emacs.exe"
+
+        return $Command
+      } -ParameterFilter { $Name -eq 'emacs.exe' }
+      Mock -Module Cackledaemon Get-ItemProperty {
+        class FakePathProperty {
+          [string]$Path
+        }
+
+        $PathProperty = New-Object FakePathProperty
+        $PathProperty.Path = "$TestDrive\Program Files\CoolProgram\bin;$TestDrive\Program Files\emacs\bin;$TestDrive\Program Files (x86)\LameProgram;"
+
+        return $PathProperty
+      }
+
+      Mock -Module Cackledaemon Set-ItemProperty {}
+
+      Set-EmacsPathEnvVariable -WarningVariable Warnings
+
+      $Warnings | Should -Be $null
+
+      Assert-MockCalled -Module Cackledaemon `
+        Get-ItemProperty `
+        -Times 1 `
+        -ParameterFilter {$Path -eq 'HKCU:\Environment' -and $Name -eq 'Path'}
+
+      Assert-MockCalled -Module Cackledaemon Set-ItemProperty -Times 0
+    }
+  }
+
+#+END_SRC
+
+In the case when an unmanaged Emacs install is in the user's path, Cackledaemon
+will add the managed Emacs install to the path, but will also warn that there's
+a second Emacs in the path. Cackledaemon sets its Emacs as lower priority than
+the existing Emacs, meaning that if the user wants Emacs binaries to resolve to
+the Cackledaemon installed ones they will need to manually intervene.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+  Context 'When an unmanaged Emacs is in the PATH' {
+    It 'should warn but add Emacs to the PATH' {
+      Mock -Module Cackledaemon Get-Command {
+        class FakeCommand {
+          [string]$Source
+        }
+
+        $Command = New-Object FakeCommand
+        $Command.Source = "$TestDrive\Program Files (x86)\emacs\bin\emacs.exe"
+
+        return $Command
+      } -ParameterFilter { $Name -eq 'emacs.exe' }
+
+      Mock -Module Cackledaemon Get-ItemProperty {
+        class FakePathProperty {
+          [string]$Path
+        }
+
+        $PathProperty = New-Object FakePathProperty
+        $PathProperty.Path = "$TestDrive\Program Files\CoolProgram\bin;$TestDrive\Program Files (x86)\emacs\bin;"
+
+        return $PathProperty
+      }
+      Mock -Module Cackledaemon Set-ItemProperty {
+        $Value.Path | Should -Be "$TestDrive\Program Files\CoolProgram\bin;$TestDrive\Program Files (x86)\emacs\bin;$TestDrive\Program Files\emacs\bin;"
+      }
+
+      Set-EmacsPathEnvVariable -WarningVariable Warnings 3> $null
+
+      $Warnings | Should -Not -Be $null
+      $Warnings.Count | Should -Be 1
+      $Warnings[0].ToString() | Should -Be "An unmanaged Emacs is already installed at $TestDrive\Program Files (x86)\emacs\bin - this may cause unexpected behavior."
+
+      Assert-MockCalled -Module Cackledaemon Get-ItemProperty `
+        -Times 1 `
+        -ParameterFilter {$Path -eq 'HKCU:\Environment' -and $Name -eq 'Path'}
+
+      Assert-MockCalled -Module Cackledaemon Set-ItemProperty `
+        -Times 1 `
+        -ParameterFilter { $Path -eq 'HKCU:\Environment' -and $Name -eq 'Path' -and -not($Value -eq $null) }
+    }
+  }
+}
+
+#+END_SRC
+*** HOME Environment Variable
+Emacs generally tries to find its init files in =~/.emacs.d= but Windows doesn't
+have a 1:1 concept of a home directory and the environment variable is typically
+not set. Emacs defaults to using =$Env:AppDir= when =$Env:HOME= isn't set, but
+in practice most people want to set =$Env:HOME= to =$Env:UserProfile=.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Set-HomeEnvVariable {
+  . $CackledaemonConfigLocation
+
+  Set-ItemProperty -Path 'HKCU:\Environment' -Name 'HOME' -Value $HomeDirectory
+}
+
+#+END_SRC
+
+This also touches the registry, but because it's a scalar value and one that
+Windows doesn't depend on, testing it is much simpler.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Set-HomeEnvVariable' {
+  BeforeEach {
+    Initialize-TestEnvironment
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  It 'should set the HOME environment variable' {
+    Mock -Module Cackledaemon Set-ItemProperty {}
+
+    Set-HomeEnvVariable
+
+    Assert-MockCalled -Module Cackledaemon Set-ItemProperty -Times 1 -ParameterFilter { $Path -eq 'HKCU:\Environment' -and $Name -eq 'HOME' -and $Value -eq "$TestDrive\UserProfile" }
+  }
+}
+#+END_SRC
+** App Paths Registry Keys
+Windows, in addition to the concept of a user ~Path~, also has the concept of
+[[https://docs.microsoft.com/en-us/windows/win32/shell/app-registration][app paths]]. These paths are used so that tools like the run command - and
+anything using [[https://docs.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shellexecuteexa][the ShellExecuteEx API]] - can find the associated programs.
+
+The relevant registry entries are in ~HKEY_LOCAL_MACHINE~ and need to be set
+as an administrator.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Set-EmacsAppPathRegistryKeys {
+  . $CackledaemonConfigLocation
+
+  @('emacs.exe', 'runemacs.exe', 'emacsclient.exe', 'emacsclientw.exe') | ForEach-Object {
+    $RegistryPath = Join-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths' $_
+    $BinPath = Join-Path $EmacsInstallLocation "bin\$_"
+
+    if (Test-Path $BinPath) {
+      if (Test-Path -Path $RegistryPath) {
+        Set-Item -Path $RegistryPath -Value $BinPath
+      } else {
+        New-Item -Path $RegistryPath -Value $BinPath
+      }
+      Set-ItemProperty -Path $RegistryPath -Name Path -Value $Path
+    } else {
+      $Exception = New-Object Exception ("{0} doesn't exist - refusing to write this to the registry." -f $BinPath)
+      $ErrorRecord = New-Object System.Management.Automation.ErrorRecord $Exception,'ItemNotFoundException','ObjectNotFound',$BinPath
+      Write-CDError $ErrorRecord
+    }
+  }
+}
+
+#+END_SRC
+
+Typically, Cackledaemon will create such an app path registry key for
+~emacs.exe~, ~runemacs.exe~, ~emacsclient.exe~ and ~emacsclientw.exe~. However,
+before doing so, it checks that each of them exists in the expected location
+first. If it can't be found, then it won't write the corresponding registry key.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Set-EmacsAppPathRegistryKeys' {
+  BeforeEach {
+    Initialize-TestEnvironment
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  Context 'when Emacs is installed' {
+    BeforeEach {
+      New-Item -Type Directory "$TestDrive\Program Files\emacs"
+      New-Item -Type Directory "$TestDrive\Program Files\emacs\bin"
+      New-Item "$TestDrive\Program Files\emacs\bin\emacs.exe"
+      New-Item "$TestDrive\Program Files\emacs\bin\runemacs.exe"
+      New-Item "$TestDrive\Program Files\emacs\bin\emacsclient.exe"
+      New-Item "$TestDrive\Program Files\emacs\bin\emacsclientw.exe"
+    }
+
+    AfterEach {
+      Remove-Item -Recurse "$TestDrive\Program Files\emacs"
+    }
+
+    It 'sets the Emacs app path registry keys' {
+      Mock -Module Cackledaemon Test-Path {
+        if ($Path -match '^HKLM') {
+          return $PATH -match '\\emacs.exe$'
+        } else {
+          return $True
+        }
+      }
+      Mock -Module Cackledaemon New-Item {}
+      Mock -Module Cackledaemon Set-Item {}
+      Mock -Module Cackledaemon Set-ItemProperty {}
+
+      Set-EmacsAppPathRegistryKeys
+
+      Assert-MockCalled -Module Cackledaemon Test-Path -Times 4 -ParameterFilter {
+        $Path -match 'bin'
+      }
+      Assert-MockCalled -Module Cackledaemon Test-Path -Times 4 -ParameterFilter {
+        $Path -match '^HKLM'
+      }
+      Assert-MockCalled -Module Cackledaemon New-Item -Times 3
+      Assert-MockCalled -Module Cackledaemon Set-Item -Times 1
+      Assert-MockCalled -Module Cackledaemon Set-ItemProperty -Times 4
+    }
+  }
+
+  Context "when Emacs isn't installed" {
+    It "doesn't set any registry keys" {
+      Mock -Module Cackledaemon Test-Path {}
+      Mock -Module Cackledaemon New-Item {}
+      Mock -Module Cackledaemon Set-Item {}
+      Mock -Module Cackledaemon Set-ItemProperty {}
+
+      Set-EmacsAppPathRegistryKeys 2> $null
+
+      Assert-MockCalled -Module Cackledaemon Test-Path -Times 0 -ParameterFilter {
+        $Path -match '^HKLM'
+      }
+      Assert-MockCalled -Module Cackledaemon New-Item -Times 0
+      Assert-MockCalled -Module Cackledaemon Set-Item -Times 0
+      Assert-MockCalled -Module Cackledaemon Set-ItemProperty -Times 0
+
+      (0..3) | ForEach-Object {
+        $Error[$_] | Should -Match "doesn't exist - refusing to write this to the registry."
+      }
+    }
+  }
+}
+
+#+END_SRC
+** Start Menu and Shortcuts
+*** Start Menu Items
+Emacs comes with a program called ~addpm.exe~ that in addition to adding app
+paths creates a shortcut to ~emacs.exe~ in a sub-folder of the start menu called
+"Gnu Emacs". The default Start menu path, which can be set inside of
+~Configuration.ps1~, follows this convention.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Get-StartMenuItems {
+  . $CackledaemonConfigLocation
+
+  Get-ChildItem -Path $StartMenuPath -ErrorAction SilentlyContinue | ForEach-Object {
+    Get-Item $_.FullName
+  }
+}
+
+#+END_SRC
+
+~Get-StartMenuItems~ gets shortcut items that are inside this folder. If there
+aren't any items in this folder, or this folder doesn't exist, then it will
+simply return no items.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Get-StartMenuItems' {
+  BeforeEach {
+    Initialize-TestEnvironment
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  Context 'when there are already start menu items' {
+    $TestShortcut = $null
+    BeforeEach {
+      New-Item -Type Directory 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
+      $TestShortcut = New-Item 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\Test.lnk'
+    }
+
+    AfterEach {
+      Remove-Item -Recurse 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
+    }
+
+    It 'should get start menu items' {
+      $Items = Get-StartMenuItems
+
+      $Items.Count | Should -Be 1
+
+      $Items | ForEach-Object { $_.FullName } | Should -Contain $TestShortcut.FullName
+    }
+  }
+
+  Context "when there isn't a start menu folder" {
+    It 'should yield zero items' {
+      $Items = Get-StartMenuItems
+
+      $Items.Count | Should -Be 0
+    }
+  }
+}
+
+#+END_SRC
+*** Creating Shortcuts
+We can create a shortcut by using [[https://docs.microsoft.com/en-us/windows/win32/com/component-object-model--com--portal][COM]] to interact with [[https://en.wikipedia.org/wiki/Windows_Script_Host][Windows Script Host.]]
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Get-WShell {
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars','',Justification='Using a global singleton for a WShell instance is appropriate')]
+  param()
+
+  if (-not $WShell) {
+    $Global:WShell = New-Object -comObject WScript.Shell
+  }
+
+  return $WShell
+}
+
+function Set-Shortcut {
+  param(
+    [string]$ShortcutPath,
+    [string]$TargetPath,
+    [string[]]$ArgumentList = @(),
+    [string]$WorkingDirectory = $Env:UserProfile,
+    [string]$Description
+  )
+
+  $Shell = Get-WShell
+
+  $Arguments = ($ArgumentList | ForEach-Object {
+                  if ($_ -match '[" ]') {
+                    return ('"{0}"' -f ($_ -replace '"', '\"'))
+                  } else {
+                    return ($_ -replace '([,;=\W])', '^$1')
+                  }
+                }) -join ' '
+
+  $Shortcut = $Shell.CreateShortcut($ShortcutPath)
+  $Shortcut.TargetPath = $TargetPath
+  $Shortcut.Arguments = $Arguments
+  $Shortcut.WorkingDirectory = $WorkingDirectory
+
+  if ($Description) {
+    $Shortcut.Description = $Description
+  }
+
+  $Shortcut.Save()
+}
+
+#+END_SRC
+
+The WShell instance used by Cackledaemon is managed as a singleton, since we
+don't ever need or want more than one of them.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Get-WShell' {
+  It 'returns a singleton WShell' {
+    $Shell = Get-WShell
+
+    $Shell | Should -Not -Be $null
+
+    Get-Wshell | Should -BeExactly $Shell
+  }
+}
+#+END_SRC
+
+Any arguments attached to the shortcut need to be escaped using
+[[https://ss64.com/nt/syntax-esc.html][batch file escaping rules]] and assigned to the shortcut object as a string.
+Our shortcut helper handles that for us.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Set-Shortcut' {
+  BeforeEach {
+    Initialize-TestEnvironment
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  It 'should create shortcuts' {
+    Mock -Module Cackledaemon Get-WShell {
+      class FakeShell {
+        [FakeShortcut]CreateShortcut([string]$Path) {
+          class FakeShortcut {
+            [string]$ShortcutPath
+            [string]$TargetPath
+            [string[]]$Arguments
+            [string]$WorkingDirectory
+            [string]$Description
+
+            Save() {
+              $this.ShortcutPath | Should -Be 'shortcut path'
+              $this.TargetPath | Should -Be 'target path'
+              $this.Arguments | Should -Be '"foo bar" "\"baz\"" ^;quux^,'
+              $this.Description | Should -Be 'description'
+            }
+          }
+
+          $Shortcut = New-Object FakeShortcut
+          $Shortcut.ShortcutPath = $Path
+          return $Shortcut
+        }
+      }
+
+      return New-Object FakeShell
+    }
+
+    Set-Shortcut -ShortcutPath 'shortcut path' -TargetPath 'target path' -Description 'description' -ArgumentList @('foo bar', '"baz"', ';quux,')
+
+    Assert-MockCalled -Module Cackledaemon Get-WShell -Times 1
+  }
+}
+
+#+END_SRC
+*** Installation
+Given a shortcuts config, we can "install" them by comparing the shortcuts in
+the directory with the ones that are configured, cleaning up the ones we don't
+want and setting the rest.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Install-CDShortcuts {
+  . $CackledaemonConfigLocation
+
+  $Config = Get-ShortcutsConfig
+
+  if ($Config) {
+    if (-not (Test-Path $StartMenuPath)) {
+      New-Item -Type Directory $StartMenuPath
+    }
+
+    $CurrentItems = Get-StartMenuItems
+    $DesiredShortcutPaths = $Config | ForEach-Object {
+        Join-Path $StartMenuPath ($_.ShortcutName + ".lnk")
+    }
+
+    $CurrentItems | Where-Object {
+        -not $DesiredShortcutPaths.Contains($_.FullName)
+    } | ForEach-Object {
+        Remove-Item $_
+    }
+
+    $Config | ForEach-Object {
+        Set-Shortcut `
+        -ShortcutPath (Join-Path $StartMenuPath ($_.ShortcutName + ".lnk")) `
+        -TargetPath (Join-Path "$EmacsInstallLocation\bin" $_.EmacsBinaryName) `
+        -ArgumentList $_.ArgumentList `
+        -Description $_.Description
+    }
+  }
+}
+
+#+END_SRC
+
+This function takes the name of an Emacs exe and ensures that the lookup happens
+inside of the configured Emacs install location. It also ensures that shortcuts
+are created inside of the configured start menu path and that they end in the
+right extension.
+
+When there is no config, calling ~Install-CDShortcuts~ is a noop and the
+directory is left untouched.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Install-CDShortcuts' {
+  BeforeEach {
+    Initialize-TestEnvironment
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  Context 'when the directory exists' {
+    BeforeEach {
+      New-Item -Type Directory 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
+      New-Item 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\RemoveMe.lnk'
+    }
+
+    Context 'when the shortcuts file exists' {
+        It 'installs shortcuts' {
+        Install-CDShortcuts
+
+        'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\RemoveMe.lnk' | Should -Not -Exist
+        'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\EmacsClient.lnk' | Should -Exist
+        }
+    }
+
+    Context "when the shortcuts file doesn't exist" {
+        It "doesn't modify the directory" {
+        Remove-Item "$CackledaemonWD\Shortcuts.csv"
+
+        Install-CDShortcuts
+
+        'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\RemoveMe.lnk' | Should -Exist
+        }
+    }
+  }
+
+  Context "when the directory does't exist" {
+    It 'creates the directory and installs shortcuts' {
+      Install-CDShortcuts
+
+      'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\EmacsClient.lnk' | Should -Exist
+    }
+  }
+}
+
+#+END_SRC
+** File Type Associations
+File type associations in Windows are [[https://twitter.com/jfhbrook/status/1245917952316039169]["complicated"]] and the documentation for
+them isn't great.
+
+At the user level, Explorer manages a bunch of registry settings that encode
+which applications a user has associated with a file type via the "Open With"
+dialogs, as well as what they've picked as the default for opening that file.
+The structure of these registry settings is complicated and research has
+indicated that Microsoft generates a cryptographic hash that proves that the
+user edited the association with Windows Explorerand will revert any registry
+changes an external program might make.
+
+On the system level, the batch commands [[https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/ftype][ftype]] and [[https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/assoc][assoc]] can be used to
+set file type associations. However, these settings are ignored by Windows
+Explorer.
+
+As such, Cackledaemon makes no attempt to manage file type associations. If you
+want Explorer to open files with Emacs, you need to go into the ~Open with >
+Choose another app~ option in the context menu, find an Emacs exe or shortcut
+that you want to use, choose it, and select the "Always use this app to open
+files" option.
+#+END_SRC
+** Ensuring that Emacs is Closed
+Windows on a kernel level will absolutely refuse to move or delete a file that
+is currently open in another process, and that includes running executables
+such as ~emacs.exe~ and ~emacsclientw.exe~. This means that if we want
+Cackledeamon's update process to be user-friendly that it has to guide the user
+through this process instead of hard crashing.
+
+*** Finding open Emacs processes
+We can use [[https://docs.microsoft.com/en-us/powershell/module/cimcmdlets/get-ciminstance?view=powershell-7][CIM]] to find processes that correspond to executables we're checking
+for. We do this by using a LIKE query to find all processes that have a file
+inside the configured Emacs install location.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Get-OpenEmacsProcesses {
+    . $CackledaemonConfigLocation
+
+    # This escape isn't thoroughly researched and may be brittle
+    $EmacsSearchQuery = "${EmacsInstallLocation}%" -replace '\\', '\\'
+
+    return Get-CimInstance -Query "
+      SELECT
+        *
+      FROM Win32_Process WHERE ExecutablePath LIKE '${EmacsSearchQuery}'
+    " | ForEach-Object { Get-Process -Id $_.ProcessId }
+}
+
+#+END_SRC
+
+*** Blocking Until They're Closed
+Given that we can find these open Emacs processes, we can poll for them on an
+interval and block until they're closed. This function uses Cackledaemon's
+logging functionality to surface this messaging to the user.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Wait-ForEmacsProcessExit {
+  [CmdletBinding()]
+  param(
+    [int]$PollingInterval = 5,  # 1 Second
+    [int]$Timeout = 60  # 1 minute
+  )
+
+  $StartTime = Get-Date
+
+  $OpenProcesses = Get-OpenEmacsProcesses
+
+  while ($OpenProcesses) {
+    if (((Get-Date) - $StartTime).TotalSeconds -gt $Timeout) {
+      $Exception = New-Object Exception "Emacs processes are still open after $Timeout seconds!"
+      $ErrorRecord = New-Object System.Management.Automation.ErrorRecord $Exception,'OpenEmacsProcessesException','LimitsExceeded',$null
+      Write-CDFatal $ErrorRecord
+    }
+
+    Write-CDInfo "The following Emacs processes are open:"
+
+    $OpenProcesses | Out-String | Write-CDInfo
+
+    Write-CDInfo "Please close these processes to continue."
+    Write-CDInfo ""
+
+    Start-Sleep -Seconds $PollingInterval
+
+    $OpenProcesses = Get-OpenEmacsProcesses
+  }
+}
+
+#+END_SRC
+** Post-Install Hooks
+After Emacs is updated, sometimes bytecode needs to be recompiled. This is going
+to be a process specific to your Emacs config. Cackledaemon supports running
+post-install hooks to support these cases.
+
+For example, if you're using Doom Emacs, you might add this to your ~Configuration.ps1~:
+
+#+BEGIN_SRC powershell
+$PostInstallHook = { doom build }
+#+END_SRC
+
+It supports both script blocks and string commands.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Invoke-PostInstallHook {
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingInvokeExpression','',Justification = 'Who am I to stop the user from using eval?')]
+  param()
+
+  . $CackledaemonConfigLocation
+
+  if ($PostInstallHook -is [string]) {
+    Invoke-Expression $PostInstallHook
+  }
+  if ($PostInstallHook -is [scriptblock]) {
+    & $PostInstallHook
+  }
+}
+
+#+END_SRC
+** Putting It All Together
+The full install process is broken up into two functions.
+
+The first of these functions is the installer for Emacs itself. It wires up the
+workspace, downloading, archive expansion and install-moving code. It will also
+run any post-install hooks that are configured. It uses [[https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/write-progress?view=powershell-5.1][Write-Progress]] to expose
+progress bars to the user, and ~Write-CDInfo~ to surface messages to the user.
+Note that in order for these messages to show up that ~$InformationAction~ needs
+to be set to "continue" - which is what the install wizard does.
+
+This function uses the [[https://github.com/jfhbrook/PSeudo][PSeudo]] library to run the subset of install commands that
+require Administrator privileges, and Windows will prompt the user for
+permission when the need for them occurs.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Install-Emacs {
+  param(
+    [switch]$Force
+  )
+
+  $ErrorActionPreference = 'Stop'
+
+  Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Loading Cackledaemon configuration...' -PercentComplete 0
+  Write-CDInfo 'Loading Cackledaemon configuration...'
+
+  . $CackledaemonConfigLocation
+
+  if (Test-Workspace) {
+    $Workspace = Get-Workspace
+  } else {
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Creating workspace...' -PercentComplete 09
+    Write-CDInfo 'Creating new workspace...'
+
+    $Workspace = New-Workspace
+  }
+
+  Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking the Emacs website for the latest available download...' -PercentComplete 18
+  Write-CDInfo 'Checking the Emacs website for the latest available download...'
+
+  $LatestDownload = Get-LatestEmacsDownload
+
+  Write-CDInfo ('Version {0} is the latest version of Emacs available for install' -f $LatestDownload.Version)
+
+  $ShouldInstall = $False
+
+  Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Checking if Emacs needs to be installed or updated...' -PercentComplete 27
+
+  if ($Force) {
+    Write-CDInfo "`-Force switch was enabled so installing Emacs regardless of what's installed"
+
+    $ShouldInstall = $True
+  } else {
+    Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -CurrentOperation "Looking for an Emacs install in $EmacsInstallLocation..." -PercentComplete 0
+
+    if (Test-EmacsExe) {
+      Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -CurrentOperation 'Running "Emacs --version"...' -PercentComplete 33
+
+      $InstalledVersion = Get-EmacsExeVersion
+
+      Write-CDInfo ('Version {0} of Emacs is installed' -f $InstalledVersion)
+
+      Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -CurrentOperation 'Comparing versions...' -PercentComplete 67
+
+      if ($LatestDownload.Version -gt $InstalledVersion) {
+        Write-CDInfo ('Upstream Emacs version {0} is newer than installed Emacs version {1}' -f $LatestDownload.Version, $InstalledVersion)
+        $ShouldInstall = $True
+      } else {
+        Write-CDInfo ('Upstream Emacs version {0} is no newer than installed Emacs version {1}' -f $LatestDownload.Version, $InstalledVersion)
+      }
+    } else {
+      Write-CDInfo 'No version of Emacs is installed'
+      $ShouldInstall = $True
+    }
+
+    Write-Progress -ParentId 1 -Id 2 -Activity 'Checking the currently installed Emacs version' -Completed
+
+  }
+
+  if (-not $ShouldInstall) {
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -Completed
+    Write-CDInfo 'Emacs is currently installed and at the latest available version.'
+  } else {
+    $TargetVersion = $LatestDownload.Version
+
+    if ($Workspace.TestInstall($TargetVersion)) {
+      Write-CDInfo "Emacs has already been downloaded and unpacked for version $TargetVersion"
+
+      $Install = $Workspace.GetInstall($TargetVersion)
+    } else {
+      if ($Workspace.TestArchive($TargetVersion)) {
+        Write-CDInfo "Emacs has already been downloaded (but not unpacked) for version $TargetVersion"
+
+        $Archive = $Workspace.GetArchive($TargetVersion);
+      } else {
+        Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Downloading Emacs version $TargetVersion..." -PercentComplete 36
+        Write-CDInfo "Downloading Emacs version $TargetVersion..."
+
+        $Archive = New-EmacsArchive $LatestDownload
+      }
+
+      Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Unpacking Emacs version $TargetVersion..." -PercentComplete 45
+      Write-CDInfo "Unpacking Emacs version $TargetVersion..."
+
+      $Install = Export-EmacsArchive $Archive
+    }
+
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation "Waiting for Emacs to exit..."
+    Write-CDInfo 'In order to install Emacs, all Emacs processes must be closed.'
+
+    Wait-ForEmacsProcessExit
+
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Elevating privileges...' -PercentComplete 55
+    Write-CDInfo "Elevating privileges..."
+
+    $ModulePath = Join-Path $PSScriptRoot 'Cackledaemon.psd1'
+
+    Invoke-AsAdministrator "
+      `$ErrorActionPreference = 'Stop'
+
+      Import-Module `"$ModulePath`"
+
+      Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Updating Emacs...' -PercentComplete 63
+      Write-CDInfo 'Updating Emacs...'
+      Update-EmacsInstall -Path $Install | Out-Null
+
+      Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Setting app path registry keys...' -PercentComplete 73
+      Write-CDInfo 'Setting app path registry keys...'
+      Set-EmacsAppPathRegistryKeys | Out-Null
+
+      Write-CDInfo 'Emacs $TargetVersion is installed and ready to rock!'
+    "
+
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -CurrentOperation 'Running post-install hook...' -PercentComplete 91
+    Write-CDInfo "Running post-install hook..."
+    Invoke-PostInstallHook
+
+    Write-Progress -Id 1 -Activity 'Installing Emacs' -Completed
+  }
+}
+
+#+END_SRC
+
+The second function handles changes to the user environment - setting up the
+user's path, the =$Env:HOME= variable and installing shortcuts. It also uses
+~Write-Progress~ and Cackledaemon logging.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Install-EmacsUserEnvironment {
+  $ErrorActionPreference = 'Stop'
+
+  Write-Progress -Id 3 -Activity 'Setting up the Emacs user environment' -CurrentOperation "Updating the user's `$Path variable..." -PercentComplete 0
+  Write-CDInfo "Updating the user's `$Path variable..."
+
+  Set-EmacsPathEnvVariable
+
+  Write-Progress -Id 3 -Activity 'Setting up the Emacs user environment' -CurrentOperation "Setting the user's `$HOME variable..." -PercentComplete 33
+  Write-CDInfo "Setting the user's `$HOME variable..."
+
+  Set-HomeEnvVariable
+
+  Write-Progress -Id 3 -Activity 'Setting up the Emacs user environment' -CurrentOperation "Installing shortcuts..." -PercentComplete 67
+  Write-CDInfo "Installing shortcuts..."
+
+  Install-CDShortcuts
+
+  Write-Progress -Id 3 -Activity 'Setting up the Emacs user environment' -Completed
+}
+
+#+END_SRC
+* Daemon Management
+Anyone who has used a fully configured [[https://www.gnu.org/software/emacs/][Emacs]] install such as [[https://www.spacemacs.org/][Spacemacs]] or [[https://github.com/hlissner/doom-emacs][Doom]]
+knows that Emacs can take a long time to initially boot. This isn't for a lack
+of trying - in fact, the source code for Doom is half speed hacks and I highly
+encourage anybody hacking on Emacs to take a look.
+
+Just as you don't want to load the JavaScript runtime for every request (this is
+how non-Node webservers [[https://en.wikipedia.org/wiki/Common_Gateway_Interface][used to do in the olden days]] and trust me it was not
+very good) you don't really want to load all of Emacs every time you open a file
+either. It's less than ideal.
+
+Luckily for us, Emacs can be ran [[https://www.emacswiki.org/emacs/EmacsAsDaemon][as a daemon]] and connected to via a client,
+typically ~emacsclient~. In Linux and [[https://www.freedesktop.org/wiki/Software/systemd/][systemd]] this works seamlessly - often you
+can run =systemctl start --user emacs= and be off to the races.
+
+In Windows it's less straightforwad. This is because the Windows abstractions
+for processes and services are wildly divergent from those in nix-like
+environments such as Linux. Init systems like systemd run and manage normal
+process; meanwhile in Windows services are in fact [[https://docs.microsoft.com/en-us/dotnet/framework/windows-services/walkthrough-creating-a-windows-service-application-in-the-component-designer][special programs]] that [[https://docs.microsoft.com/en-us/dotnet/api/system.serviceprocess?view=netframework-4.8][expose
+an alternate interface]] to that of the standard process. The upshot is that any
+standard process that one wants to run as a Windows service needs to be wrapped
+in one of these special programs, complete with bespoke abstractions for process
+management, log management and so on.
+
+Alternately, arbitrary processes may be [[https://support.microsoft.com/en-us/help/4026268/windows-10-change-startup-apps][configured to start on user login]].
+Practically speaking, this is how most persistent applications are ran in
+Windows, and in fact the [[https://www.emacswiki.org/emacs/EmacsMsWindowsIntegration#toc8][approach documented in the wiki]] does exactly this - it
+uses a PowerShell script to generate a very simple [[https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/windows-commands][batch file]] that cleans up
+server state from the prior run and then spawns the Emacs daemon.
+
+This works OK. However, there are some downsides. if the Emacs daemon crashes
+for any reason, there's no signal other than ~emacsclient~ mysteriously not
+working; any logs that come out of the Emacs daemon are lost to the aether; and
+straightforward lifecycle actions that can be done casually with systemd (start,
+top, restart, status) are very non-ergonomic.
+
+Cackledaemon includes abstrations for managing the Emacs daemon as a detached
+process during user login, with fuctions to stop start and restart the Emacs
+daemon. It supports serializing the PID to disk so that it can detect whether
+the Emacs daemon is running at any given time.
+** TCP Server File
+Typically ~emacsclient~ communicates with the daemon using unix sockets, but
+Windows doesn't support them. Therefore, Emacs [[https://www.gnu.org/software/emacs/manual/html_node/emacs/TCP-Emacs-server.html][runs its server over TCP]] and
+~emacsclient.exe~ looks for a file that advertises the port. This file is placed
+in the directory defined by the ~server-auth-dir~ variable in Emacs and defaults
+to =~/.emacs.d/server=.
+
+If everything sticks to the defaults then everything will Just Work, and
+Cackledaemon makes no special effort to configure this. However, some Emacs
+configs might redefine this variable. For instance, Doom Emacs [[https://github.com/hlissner/doom-emacs/blob/develop/core/core.el#L244][puts it in its
+cache directory]]. In this case, the way to make everything work is to set the
+~EMACS_SERVER_FILE~ environment variable, so that calls to
+emacsclient/emacsclientw can find the server file.
+** Process State Serialization
+In order to do basic monitoring of the Emacs daemon, we serialize the process
+object to and from a JSON file inside the working directory. We only need to
+save the ID, so we extract that from the process object before saving.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Write-ProcessToPidFile {
+  param([System.Diagnostics.Process]$Process)
+
+  . $CackledaemonConfigLocation
+
+  ($Process).Id | ConvertTo-Json | Out-File $PidFile
+}
+
+#+END_SRC
+
+By default, this file is stored in
+=~/AppData/Roaming/Cackledaemon/DaemonPidFile.json=. This can be configured by
+editing the ~Configuration.ps1~ file.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Write-ProcessToPidFile' {
+  $TestProcess = $null
+  BeforeEach {
+    Initialize-TestEnvironment
+    $TestProcess = (Get-Process)[0]
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  It 'writes a process ID to the PID file' {
+    Write-ProcessToPidFile $TestProcess
+    'TestDrive:\Cackledaemon\DaemonPidFile.json' | Should -Exist
+    'TestDrive:\Cackledaemon\DaemonPidFile.json' | Should -FileContentMatch $TestProcess.Id
+  }
+}
+
+#+END_SRC
+
+Getting a process from the file is then a matter of pulling the PID from the
+file and using [[https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.management/get-process?view=powershell-5.1][Get-Process]] to fetch the live process object.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Get-ProcessFromPidFile {
+  . $CackledaemonConfigLocation
+
+  if (-not (Test-Path $PidFile)) {
+    return $null
+  }
+
+  $Id = (Get-Content $PidFile | ConvertFrom-Json)
+
+  if ($Id) {
+    $Process = Get-Process -Id $Id -ErrorAction SilentlyContinue
+  }
+
+  if (-not $Process) {
+    Remove-Item $PidFile
+  }
+
+  return $Process
+}
+
+#+END_SRC
+
+When the PID file is current, the expected process is returned. However, when
+the process in the PID file can't be found, the PID file is removed and a null
+value is returned. When the PID file itself is missing, Cackledaemon also
+returns a null value.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Get-ProcessFromPidFile' {
+  BeforeEach {
+    Initialize-TestEnvironment
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  Context 'when the PID file is current' {
+    $TestProcess = $null
+
+    BeforeEach {
+      $TestProcess = (Get-Process)[0]
+
+      Write-ProcessToPidFile $TestProcess
+    }
+
+    It 'reads a process ID from the PID file' {
+      $Process = Get-ProcessFromPidFile
+      $Process.Id | Should -Be $TestProcess.Id
+    }
+  }
+
+  Context 'when the PID file is stale' {
+    BeforeEach {
+      Set-Content -Path 'TestDrive:\Cackledaemon\DaemonPidFile.json' -Value '123456789'
+      Get-Process -Id 123456789 -ErrorAction SilentlyContinue | Should -Be $null
+    }
+
+    It 'removes the PID file and returns null' {
+      $Process = Get-ProcessFromPidFile
+      $Process | Should -Be $null
+      'TestDrive:\Cackledaemon\DaemonPidFile.json' | Should -Not -Exist
+    }
+  }
+
+  Context 'when there is no PID file' {
+    It 'returns null' {
+      $Process = Get-ProcessFromPidFile
+      $Process | Should -Be $null
+    }
+  }
+}
+
+#+END_SRC
+** Checking For Existing Daemons
+It would probably be bad to try to start an Emacs daemon if one is already
+running.
+
+If an Emacs daemon is being managed, then retrieving the process state should be
+successful and we can simply check to make sure that ~Get-ProcessFromPidFile~
+returns a non-null value. However, it's also possible to start the Emacs daemon
+out-of-band, in which case we probably don't want to get involved either. To
+check for this, we use [[https://docs.microsoft.com/en-us/powershell/module/cimcmdlets/get-ciminstance?view=powershell-7][CIM]] to find active Emacs processes and then check to see
+if any of them have ~--daemon~ in their command line args. We intentionally punt
+on the edge case of searching for Emacs instances *not* started with the
+~--daemon~ but which have called =(run-server)=.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Get-UnmanagedEmacsDaemon {
+  $ManagedProcess = Get-ProcessFromPidFile
+  return Get-CimInstance -Query "
+    SELECT
+      *
+    FROM Win32_Process
+    WHERE Name = 'emacs.exe' OR Name = 'runemacs.exe'
+  " | Where-Object {
+    $_.CommandLine.Contains("--daemon")
+  } | ForEach-Object {
+    Get-Process -Id ($_.ProcessId)
+  } | Where-Object { -not ($_.Id -eq $ManagedProcess.Id) }
+}
+
+#+END_SRC
+** Start the Emacs Daemon
+This function launches the Emacs daemon (if it's not running already) with
+sensible parameters and stores process info so we can do basic monitoring.
+
+We can start the Emacs daemon by calling [[https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.management/start-process?view=powershell-5.1][Start-Process]]. Emacs is configured to
+run in the background and redirect stdio to log files in Cackledaemon's working
+directory.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Start-EmacsDaemon {
+  [CmdletBinding()]
+  param ([switch]$Wait)
+
+  . $CackledaemonConfigLocation
+
+  $Process = Get-ProcessFromPidFile
+
+  if ($Process) {
+    $Exception = New-Object Exception 'The Emacs daemon is already running and being managed.'
+    $ErrorRecord = New-Object System.Management.Automation.ErrorRecord $Exception,'ManagedResourceExistsException','ResourceExists',$null
+    Write-CDError $ErrorRecord
+  } elseif (Get-UnmanagedEmacsDaemon) {
+    $Exception = New-Object Exception 'An unmanaged Emacs daemon is running.'
+    $ErrorRecord = New-Object System.Management.Automation.ErrorRecord $Exception,'UnmanagedResourceExistsException','ResourceExists',$null
+    Write-CDError $ErrorRecord
+  } else {
+    Write-CDInfo 'Starting the Emacs daemon...'
+
+    $Process = Start-Process `
+      -FilePath 'emacs.exe' `
+      -ArgumentList '--daemon' `
+      -NoNewWindow `
+      -RedirectStandardOut $EmacsStdOutLogFile `
+      -RedirectStandardError $EmacsStdErrLogFile `
+      -PassThru
+
+    Write-ProcessToPidFile $Process
+
+    if ($Wait) {
+      Write-CDDebug 'Waiting for Emacs daemon to exit...'
+      $Process = Wait-Process -Id $Process.Id
+    }
+
+    Write-CDInfo 'Done.'
+
+    return $Process
+  }
+}
+
+#+END_SRC
+
+~Start-EmacsDaemon~ supports blocking with the ~-Wait~ parameter. When Emacs is
+already running, whether it's managed or unmanaged, it will write a
+non-terminating error and exit.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Start-EmacsDaemon' {
+  Context 'when Emacs is not running and -Wait is false' {
+    BeforeEach {
+      Initialize-TestEnvironment
+    }
+
+    AfterEach {
+      Restore-StandardEnvironment
+    }
+
+    It 'starts Emacs in the background' {
+      Mock -Module Cackledaemon Get-ProcessFromPidFile { $null }
+      Mock -Module Cackledaemon Get-UnmanagedEmacsDaemon { $null }
+      Mock -Module Cackledaemon Start-Process { (Get-Process)[0] }
+      Mock -Module Cackledaemon Write-ProcessToPidFile {}
+      Mock -Module Cackledaemon Wait-Process {}
+
+      Start-EmacsDaemon
+
+      Assert-MockCalled -Module Cackledaemon Get-ProcessFromPidFile -Times 1
+      Assert-MockCalled -Module Cackledaemon Get-UnmanagedEmacsDaemon -Times 1
+      Assert-MockCalled -Module Cackledaemon Start-Process -Times 1
+      Assert-MockCalled -Module Cackledaemon Write-ProcessToPidFile -Times 1
+      Assert-MockCalled -Module Cackledaemon Wait-Process -Times 0
+    }
+  }
+
+  Context 'when Emacs is not running and -Wait is true' {
+    BeforeEach {
+      Initialize-TestEnvironment
+    }
+
+    AfterEach {
+      Restore-StandardEnvironment
+    }
+
+    It 'starts Emacs and then waits' {
+      Mock -Module Cackledaemon Get-ProcessFromPidFile { $null }
+      Mock -Module Cackledaemon Get-UnmanagedEmacsDaemon { $null }
+      Mock -Module Cackledaemon Start-Process { (Get-Process)[0] }
+      Mock -Module Cackledaemon Write-ProcessToPidFile { $null }
+      Mock -Module Cackledaemon Wait-Process { (Get-Process)[0] }
+
+      Start-EmacsDaemon -Wait
+
+      Assert-MockCalled -Module Cackledaemon Get-ProcessFromPidFile -Times 1
+      Assert-MockCalled -Module Cackledaemon Get-UnmanagedEmacsDaemon -Times 1
+      Assert-MockCalled -Module Cackledaemon Start-Process -Times 1
+      Assert-MockCalled -Module Cackledaemon Write-ProcessToPidFile -Times 1
+      Assert-MockCalled -Module Cackledaemon Wait-Process -Times 1
+    }
+  }
+
+  Context 'when Emacs is running' {
+    BeforeEach {
+      Initialize-TestEnvironment
+    }
+
+    AfterEach {
+      Restore-StandardEnvironment
+    }
+
+    It 'logs an error and exits' {
+      Mock -Module Cackledaemon Get-ProcessFromPidFile { (Get-Process)[0] }
+      Mock -Module Cackledaemon Get-UnmanagedEmacsDaemon {}
+      Mock -Module Cackledaemon Start-Process {}
+      Mock -Module Cackledaemon Write-ProcessToPidFile {}
+      Mock -Module Cackledaemon Wait-Process {}
+
+      Start-EmacsDaemon 2> $null
+
+      Assert-MockCalled -Module Cackledaemon Get-ProcessFromPidFile -Times 1
+      Assert-MockCalled -Module Cackledaemon Get-UnmanagedEmacsDaemon -Times 0
+      Assert-MockCalled -Module Cackledaemon Start-Process -Times 0
+      Assert-MockCalled -Module Cackledaemon Write-ProcessToPidFile -Times 0
+      Assert-MockCalled -Module Cackledaemon Wait-Process -Times 0
+
+      $Error[0].ToString() | Should -Be 'The Emacs daemon is already running and being managed.'
+    }
+  }
+
+  Context 'when an unmanaged Emacs is running' {
+    BeforeEach {
+      Initialize-TestEnvironment
+    }
+
+    AfterEach {
+      Restore-StandardEnvironment
+    }
+
+    It 'logs an error and exits' {
+      Mock -Module Cackledaemon Get-ProcessFromPidFile { $null }
+      Mock -Module Cackledaemon Get-UnmanagedEmacsDaemon { (Get-Process)[0] }
+      Mock -Module Cackledaemon Start-Process {}
+      Mock -Module Cackledaemon Write-ProcessToPidFile {}
+      Mock -Module Cackledaemon Wait-Process {}
+
+      Start-EmacsDaemon 2> $null
+
+      Assert-MockCalled -Module Cackledaemon Get-ProcessFromPidFile -Times 1
+      Assert-MockCalled -Module Cackledaemon Get-UnmanagedEmacsDaemon -Times 1
+      Assert-MockCalled -Module Cackledaemon Start-Process -Times 0
+      Assert-MockCalled -Module Cackledaemon Write-ProcessToPidFile -Times 0
+      Assert-MockCalled -Module Cackledaemon Wait-Process -Times 0
+
+      $Error[0].ToString() | Should -Be 'An unmanaged Emacs daemon is running.'
+    }
+  }
+}
+
+#+END_SRC
+** Get the Emacs Daemon
+Getting the Emacs daemon is a matter of calling ~Get-ProcessFromPidFile~ - it
+just has an awkward name. This wrapper adds cmdlet bindings so that the
+~-ErrorAction~ flag is supported.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Get-EmacsDaemon {
+  [CmdletBinding()]
+  param()
+
+  Get-ProcessFromPidFile
+}
+
+#+END_SRC
+** Stop the Emacs Daemon
+To stop the Emacs daemon, we need to retrieve the process state from the PID
+file and attempt to stop the process with [[https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.management/stop-process?view=powershell-5.1][Stop-Process]].
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Stop-EmacsDaemon {
+  [CmdletBinding()]
+  param()
+
+  $Process = Get-ProcessFromPidFile
+
+  if (-not $Process) {
+    $Exception = New-Object Exception "A managed Emacs daemon isn't running and can not be stopped."
+    $ErrorRecord = New-Object System.Management.Automation.ErrorRecord $Exception,'UnmanagedResourceUnavailableException','ResourceUnavailable',$null
+    Write-CDError $ErrorRecord
+  } else {
+    Write-CDInfo 'Stopping the Emacs daemon...'
+
+    Stop-Process -InputObject $Process
+
+    Write-ProcessToPidFile $null
+
+    Write-CDInfo 'Done.'
+  }
+}
+
+#+END_SRC
+
+When Emacs is running, ~Stop-EmacsDaemon~ will stop the process. However, if
+Emacs isn't running it will exit with a non-terminating error.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Stop-EmacsDaemon' {
+  BeforeEach {
+    Initialize-TestEnvironment
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  Context 'when Emacs is running' {
+    It 'stops Emacs' {
+      Mock -Module Cackledaemon Get-ProcessFromPidFile { (Get-Process)[0] }
+      Mock -Module Cackledaemon Stop-Process {}
+      Mock -Module Cackledaemon Write-ProcessToPidFile {}
+
+      Stop-EmacsDaemon
+
+      Assert-MockCalled -Module Cackledaemon Get-ProcessFromPidFile -Times 1
+      Assert-MockCalled -Module Cackledaemon Stop-Process -Times 1
+      Assert-MockCalled -Module Cackledaemon Write-ProcessToPidFile -Times 1 -ParameterFilter { $Process -eq $null }
+    }
+  }
+
+  Context 'when Emacs is not running' {
+    It 'exits with an error' {
+      Mock -Module Cackledaemon Get-ProcessFromPidFile { $null }
+      Mock -Module Cackledaemon Stop-Process {}
+      Mock -Module Cackledaemon Write-ProcessToPidFile {}
+
+      Stop-EmacsDaemon 2> $null
+
+      Assert-MockCalled -Module Cackledaemon Get-ProcessFromPidFile -Times 1
+      Assert-MockCalled -Module Cackledaemon Stop-Process -Times 0
+      Assert-MockCalled -Module Cackledaemon Write-ProcessToPidFile -Times 0
+
+      $Error[0].ToString() | Should -Be "A managed Emacs daemon isn't running and can not be stopped."
+    }
+  }
+}
+
+#+END_SRC
+** Restart the Emacs Daemon
+Once stopping and starting the daemon is possible, restarting it is a matter of
+stopping it and then starting it. In this implementation, we warn if the Emacs
+daemon isn't running and then attempt to start it.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Restart-EmacsDaemon {
+  [CmdletBinding()]
+  param()
+
+  try {
+    Stop-EmacsDaemon -ErrorAction Stop
+  } catch {
+    Write-CDWarning 'Attempting to start the Emacs daemon even though stopping it failed'
+  }
+
+  Start-EmacsDaemon
+}
+
+#+END_SRC
+* Desktop Applet
+Cackledaemon includes a desktop tray icon, called an applet by Cackledaemon, for
+managing the Emacs daemon, log rotation and checking for updates with the
+installer wizard. It also makes it easy to edit the configuration or peek in the
+working directory. It does this by leveraging the [[https://docs.microsoft.com/en-us/dotnet/api/system.windows.forms.notifyicon?view=netframework-4.8][NotifyIcon class]] from Windows
+Forms.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+Add-Type -AssemblyName System.Windows.Forms
+
+#+END_SRC
+
+** Invoking the Applet
+The applet creates a global variable to contain a parent form object and another
+to contain our NotifyIcon. These are global because certain kinds of callbacks
+need to access these properties in a shared scope.
+
+Note that the parent form is hidden and not drawn to the screen. This is because
+we don't actually want to render a form *per se*, but want to be able to give
+the NotifyIcon a well-formed parent.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Invoke-CDApplet {
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars','',Justification='Using Windows Forms necessitates global variables')]
+  [CmdletBinding()]
+  param()
+
+  # The parent Form
+
+  $Global:AppletForm = New-Object System.Windows.Forms.Form
+  $AppletForm.Visible = $False
+  $AppletForm.WindowState = "minimized"
+  $AppletForm.ShowInTaskbar = $False
+
+  # The NotifyIcon
+
+  $Global:AppletIcon = New-Object System.Windows.Forms.NotifyIcon
+  $AppletIcon.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon(
+    (Get-Command 'emacs.exe').Path
+  )
+  $AppletIcon.Visible = $True
+
+#+END_SRC
+
+When actions triggered inside the applet raise a terminating error, we use a
+tooltip notification to message the user about the failure. This is managed with
+a utility function that wraps a script block argument.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+  function Start-InstrumentedBlock {
+    param(
+      [string]$Message,
+      [ScriptBlock]$ScriptBlock,
+      [System.Windows.Forms.ToolTipIcon]$Icon = [System.Windows.Forms.ToolTipIcon]::Warning
+    )
+
+    try {
+      Invoke-Command -ScriptBlock $ScriptBlock
+    } catch {
+      try {
+        . $CackledaemonConfigLocation
+      } catch {
+        Write-Warning 'Unable to load configuration! Using default notify timeout.'
+        $NotifyTimeout = 5000
+      }
+
+      Write-CDError $_
+
+      $AppletIcon.BalloonTipIcon = $Icon
+      $AppletIcon.BalloonTipTitle = $Message
+      $AppletIcon.BalloonTipText = $_.Exception
+      $AppletIcon.ShowBalloonTip($NotifyTimeout)
+    }
+  }
+
+#+END_SRC
+
+Right clicking the icon yields a context menu. The first few items in the menu
+display the status of the Emacs daemon and of the log rotation job. When this
+menu is accessed, the applet refreshes this status throughout the applet.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+  $ContextMenu = New-Object System.Windows.Forms.ContextMenu
+  $AppletIcon.ContextMenu = $ContextMenu
+
+  $DaemonStatusItem = New-Object System.Windows.Forms.MenuItem
+  $DaemonStatusItem.Index = 0
+  $DaemonStatusItem.Text = '[???] Emacs Daemon'
+  $ContextMenu.MenuItems.Add($DaemonStatusItem) | Out-Null
+
+  $LogRotateStatusItem = New-Object System.Windows.Forms.MenuItem
+  $LogRotateStatusItem.Text = '[???] Emacs Logs Rotation'
+  $ContextMenu.MenuItems.Add($LogRotateStatusItem) | Out-Null
+
+  $OnIconClick = {
+    $Process = Get-ProcessFromPidFile
+    if ($Process) {
+      $DaemonStatusItem.Text = '[RUNNING] Emacs Daemon'
+      $StartDaemonItem.Enabled = $False
+      $StopDaemonItem.Enabled = $True
+      $RestartDaemonItem.Enabled = $True
+    } else {
+      $DaemonStatusItem.Text = '[STOPPED] Emacs Daemon'
+      $StartDaemonItem.Enabled = $True
+      $StopDaemonItem.Enabled = $False
+      $RestartDaemonItem.Enabled = $True
+    }
+
+    $Job = Get-Job -Name 'CDLogRotateJob' -ErrorAction SilentlyContinue
+
+    if ($Job) {
+      $State = $Job.State.ToUpper()
+
+      if ($State -eq 'RUNNING') {
+        $State = 'ENABLED'
+      }
+
+      $LogRotateStatusItem.Text = ('[{0}] Logs Rotation' -f $State)
+      $EnableLogRotateItem.Enabled = $False
+      $DisableLogRotateItem.Enabled = $True
+    } else {
+      $LogRotateStatusItem.Text = '[DISABLED] Logs Rotation'
+      $EnableLogRotateItem.Enabled = $True
+      $DisableLogRotateItem.Enabled = $False
+    }
+  }
+  $AppletIcon.add_MouseDown($OnIconClick)
+
+  $ContextMenu.MenuItems.Add('-') | Out-Null
+
+#+END_SRC
+
+The applet contains menu items for starting, stopping and restarting the daemon.
+These items are appropriately enabled and disabled when the menu is right-clicked.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+  $StartDaemonItem = New-Object System.Windows.Forms.MenuItem
+  $StartDaemonItem.Text = 'Start Emacs Daemon...'
+  $OnStartDaemonClick = {
+    Start-InstrumentedBlock 'Failed to start the Emacs daemon' {
+      Start-EmacsDaemon -ErrorAction Stop
+    }
+  }
+  $StartDaemonItem.add_Click($OnStartDaemonClick)
+  $ContextMenu.MenuItems.Add($StartDaemonItem) | Out-Null
+
+  $StopDaemonItem = New-Object System.Windows.Forms.MenuItem
+  $StopDaemonItem.Text = 'Stop Emacs Daemon...'
+  $OnStopDaemonClick = {
+    Start-InstrumentedBlock 'Failed to stop the Emacs daemon' {
+      Stop-EmacsDaemon -ErrorAction Stop
+    }
+  }
+  $StopDaemonItem.add_Click($OnStopDaemonClick)
+  $ContextMenu.MenuItems.Add($StopDaemonItem) | Out-Null
+
+  $RestartDaemonItem = New-Object System.Windows.Forms.MenuItem
+  $RestartDaemonItem.Text = 'Restart Emacs Daemon...'
+  $OnRestartDaemonClick = {
+    Start-InstrumentedBlock 'Failed to restart the Emacs daemon' {
+      Restart-EmacsDaemon -ErrorAction Stop
+    }
+  }
+  $RestartDaemonItem.add_Click($OnRestartDaemonClick)
+  $ContextMenu.MenuItems.Add($RestartDaemonItem) | Out-Null
+
+  $ContextMenu.MenuItems.Add('-') | Out-Null
+
+#+END_SRC
+
+The applet also has menu items that will start and stop the log rotate job in
+the background. These are also appropriately enabled and disabled when the icon
+is right clicked.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+  $EnableLogRotateItem = New-Object System.Windows.Forms.MenuItem
+  $EnableLogRotateItem.Text = 'Enable Log Rotation...'
+  $OnEnableLogRotateClick = {
+    Start-InstrumentedBlock 'Failed to enable log rotation' {
+      Enable-CDLogRotateJob -ErrorAction Stop
+    }
+  }
+  $EnableLogRotateItem.add_Click($OnEnableLogRotateClick)
+  $ContextMenu.MenuItems.Add($EnableLogRotateItem) | Out-Null
+
+  $DisableLogRotateItem = New-Object System.Windows.Forms.MenuItem
+  $DisableLogRotateItem.Text = 'Disable Log Rotation...'
+  $OnDisableLogRotateClick = {
+    Start-InstrumentedBlock 'Failed to disable log rotation' {
+      Disable-CDLogRotateJob -ErrorAction Stop
+    }
+  }
+  $DisableLogRotateItem.add_Click($OnDisableLogRotateClick)
+  $ContextMenu.MenuItems.Add($DisableLogRotateItem) | Out-Null
+
+  $ContextMenu.MenuItems.Add('-') | Out-Null
+
+#+END_SRC
+
+The Cackledaemon applet includes a menu item for checking for updates. The
+architecture of the icon combined with PowerShell's concurrency models is such
+that it can't check for updates in an evented manner, but the user can click
+this item to trigger the process manually. The applet will launch the install
+wizard inside of a new PowerShell process.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+  $InstallWizardItem = New-Object System.Windows.Forms.MenuItem
+  $InstallWizardItem.Text = 'Check for updates...'
+  $OnInstallWizardClick = {
+    Start-InstrumentedBlock 'Failed to launch install wizard' {
+      Start-Process powershell.exe -ArgumentList @(
+        '-NoExit',
+        '-Command', (Join-Path $PSScriptRoot 'InstallWizard.ps1')
+      )
+    }
+  }
+  $InstallWizardItem.add_Click($OnInstallWizardClick)
+  $ContextMenu.MenuItems.Add($InstallWizardItem) | Out-Null
+
+  $ContextMenu.MenuItems.Add('-') | Out-Null
+
+#+END_SRC
+
+Cackledaemon leverages ~Start-Process~'s behavior for non-executable arguments,
+which is to use the associated application to open the item. In the case of
+opening the working directory this is very likely Windows Explorer. In the case
+of the ~Configuration.ps1~ file, this depends on how Windows is configured. By
+default it is likely the [[https://docs.microsoft.com/en-us/powershell/scripting/components/ise/introducing-the-windows-powershell-ise?view=powershell-5.1][PowerShell ISE]], but it will use whichever application
+is configured to open ~.ps1~ files in Windows Explorer.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+  $EditConfigItem = New-Object System.Windows.Forms.MenuItem
+  $EditConfigItem.Text = 'Edit Configuration...'
+  $OnEditConfigClick = {
+    Start-InstrumentedBlock 'Failed to edit configuration' {
+      Start-Process $CackledaemonConfigLocation
+    }
+  }
+  $EditConfigItem.add_Click($OnEditConfigClick)
+  $ContextMenu.MenuItems.Add($EditConfigItem) | Out-Null
+
+  $OpenWDItem = New-Object System.Windows.Forms.MenuItem
+  $OpenWDItem.Text = 'Open Working Directory...'
+  $OnOpenWdClick = {
+    Start-InstrumentedBlock 'Failed to open working directory' {
+      Start-Process $CackledaemonWD -ErrorAction Stop
+    }
+  }
+  $OpenWDItem.add_Click($OnOpenWDClick)
+  $ContextMenu.MenuItems.Add($OpenWDItem) | Out-Null
+
+  $ContextMenu.MenuItems.Add('-') | Out-Null
+
+#+END_SRC
+
+When the icon is first loaded, it will attempt to start both the Emacs daemon
+and the log rotation job.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+  $OnLoad = {
+    Start-InstrumentedBlock 'Failed to start the Emacs daemon' {
+      Start-EmacsDaemon -ErrorAction Stop
+    }
+    Start-InstrumentedBlock 'Failed to enable log rotation' {
+      Enable-CDLogRotateJob -ErrorAction Stop
+    }
+  }
+  $AppletForm.add_Load($OnLoad)
+
+#+END_SRC
+
+On exit, it will attempt to stop the Emacs daemon and disable the log rotate
+jobs gracefully, but will then exit either way.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+  $ExitItem = New-Object System.Windows.Forms.MenuItem
+  $ExitItem.Text = 'Exit'
+  $ContextMenu.MenuItems.Add($ExitItem) | Out-Null
+
+  $OnExit = {
+    if (Get-EmacsDaemon) {
+      Start-InstrumentedBlock 'Failed to gracefully shut down Emacs' {
+        Stop-EmacsDaemon -ErrorAction Stop
+      }
+    }
+
+    if (Get-Job -Name 'CDLogRotateJob' -ErrorAction SilentlyContinue) {
+      Start-InstrumentedBlock 'Failed to gracefully shut down log rotation' {
+        Disable-CDLogRotateJob -ErrorAction Stop
+      }
+    }
+    $AppletIcon.Visible = $False
+    $AppletIcon.Dispose()
+    $AppletForm.Close()
+    Remove-Variable -Name AppletForm -Scope Global
+    Remove-Variable -Name AppletIcon -Scope Global
+  }
+  $ExitItem.add_Click($OnExit)
+
+#+END_SRC
+
+After all of the menu items and callbacks are configured, the icon is started by
+calling the ~ShowDialog~ method on the parent form. This blocks until the icon
+exits.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+  $AppletForm.ShowDialog() | Out-Null
+}
+
+#+END_SRC
+
+** Launching the Applet
+The icon can be launched by running ~Invoke-CDApplet~ in a PowerShell terminal,
+but Cackledaemon includes a dedicated launcher that uses VBScript and the
+Windows Script Host to launch PowerShell in the background [[https://www.faqforge.com/windows/how-to-execute-powershell-scripts-without-pop-up-window/][without creating a
+new window]].
+
+#+BEGIN_SRC vbscript :tangle ./Cackledaemon/Applet.vbs :noweb yes
+<<vbscript-license-header>>
+
+command = "powershell.exe -nologo -command Invoke-CDApplet"
+
+set shell = CreateObject("WScript.Shell")
+shell.Run command,0
+#+END_SRC
+
+This launcher can be linked via a shortcut into the start menu. Cackledaemon
+installs such a shortcut into the "GNU Emacs" folder, but also installs it into
+[[https://support.microsoft.com/en-us/help/4026268/windows-10-change-startup-apps][the shell:startup directory]] so that the Cackledaemon applet will automatically
+launch on user login.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+function Install-CDApplet {
+  . $CackledaemonConfigLocation
+
+  if (-not (Test-Path $StartMenuPath)) {
+    New-Item -Type Directory $StartMenuPath
+  }
+
+  $StartupPath = Join-Path $Env:AppData 'Microsoft\Windows\Start Menu\Programs\Startup'
+
+  @($StartMenuPath, $StartupPath) | ForEach-Object {
+    Set-Shortcut `
+      -ShortcutPath (Join-Path $_ ("Cackledaemon.lnk")) `
+      -TargetPath (Join-Path $PSScriptRoot "Applet.vbs") `
+      -Description "Launch the Cackledaemon applet"
+  }
+}
+
+#+END_SRC
+
+The link inside the "GNU Emacs" folder respects the same configuration
+parameters as Emacs shortcuts more generally, but the location of the autostart
+directory is non-configurable.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon.Tests.ps1
+Describe 'Install-CDApplet' {
+  BeforeEach {
+    Initialize-TestEnvironment
+    New-Item -Type Directory 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Startup'
+  }
+
+  AfterEach {
+    Restore-StandardEnvironment
+  }
+
+  Context 'when the shortcuts directory exists' {
+    BeforeEach {
+      New-Item -Type Directory 'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs'
+    }
+
+    It 'installs applet shortcuts' {
+      Install-CDApplet
+
+      'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\Cackledaemon.lnk' | Should -Exist
+      'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Startup\Cackledaemon.lnk' | Should -Exist
+    }
+  }
+
+  Context "when the shortcuts directory doesn't exist" {
+    It 'installs the applet shorcuts' {
+      Install-CDApplet
+
+      'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Gnu Emacs\Cackledaemon.lnk' | Should -Exist
+      'TestDrive:\AppData\Microsoft\Windows\Start Menu\Programs\Startup\Cackledaemon.lnk' | Should -Exist
+    }
+  }
+}
+
+#+END_SRC
+* The Cackledaemon Module
+Cackledaemon is [[https://docs.microsoft.com/en-us/powershell/scripting/developer/module/how-to-write-a-powershell-module-manifest?view=powershell-7][packaged as a PowerShell module]]. It was written by Josh Holbrook
+in 2020 and is released under the GNU General Public License, either version 3
+or - at your option - any later version.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psd1
+@{
+  RootModule = 'Cackledaemon.psm1'
+
+  ModuleVersion = '0.1.7'
+
+  GUID = '10d14360-ee5c-4363-bfe8-f4116a8ce764'
+
+  Author = 'Josh Holbrook'
+  Copyright = 'Copyright 2020 Josh Holbrook.
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.'
+
+  Description = 'An Emacs installation and runtime manager for Windows'
+
+#+END_SRC
+
+Cackledaemon was developed against PowerShell version 5.1. It requires the
+PSeudo module for privilege escalation and Windows Forms for rendering the tray
+applet. Powershell Core may work with some effort, but is currently unsupported.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psd1
+  PowerShellVersion = '5.1'
+  RequiredModules = @(
+    @{ModuleName='PSeudo'; ModuleVersion='1.0'}
+  )
+  RequiredAssemblies = @('System.Windows.Forms')
+
+#+END_SRC
+
+The majority of functions defined inside the Cackledaemon module, plus the
+~Invoke-CDInstallWizard~ alias and the ~$CackledaemonWD~ and
+~$CackledaemonConfigLocation~ variables, are exported. Some of these functions
+are intended to be used by end users, but many of them are only exposed for
+testing purposes.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psm1
+$AliasesToExport = @('Invoke-CDInstallWizard')
+
+$FunctionsToExport = @(
+  'Clear-ServerFileDirectory',
+  'Disable-Job',
+  'Disable-CDLogRotateJob',
+  'Enable-Job',
+  'Enable-CDLogRotateJob',
+  'Export-EmacsArchive'
+  'Get-EmacsDaemon',
+  'Get-EmacsDownload',
+  'Get-EmacsExeVersion',
+  'Get-FileTypeAssociationsConfig',
+  'Get-LatestEmacsDownload',
+  'Get-OpenEmacsProcesses',
+  'Get-ProcessFromPidFile',
+  'Get-ShortcutsConfig',
+  'Get-StartMenuItems',
+  'Get-StartMenuPath',
+  'Get-UnmanagedEmacsDaemon',
+  'Get-WShell',
+  'Get-Workspace',
+  'Install-CDApplet',
+  'Install-Emacs',
+  'Install-EmacsUserEnvironment',
+  'Install-FileTypeAssociations',
+  'Install-CDShortcuts',
+  'Invoke-CDApplet',
+  'Invoke-LogRotate',
+  'Invoke-PostInstallHook',
+  'New-CackledaemonWD',
+  'New-CDLogRecord',
+  'New-Download',
+  'New-EmacsArchive',
+  'New-ServerFileDirectory',
+  'New-Shortcut',
+  'New-Version',
+  'New-Workspace',
+  'Restart-EmacsDaemon',
+  'Set-EmacsAppPathRegistryKeys',
+  'Set-EmacsPathEnvVariable',
+  'Set-HomeEnvVariable',
+  'Set-Shortcut',
+  'Start-EmacsDaemon',
+  'Stop-EmacsDaemon',
+  'Test-EmacsExe',
+  'Test-ServerFileDirectory',
+  'Update-EmacsInstall',
+  'Write-CDDebug',
+  'Write-CDError',
+  'Write-CDFatal',
+  'Write-CDInfo',
+  'Write-CDLog',
+  'Write-CDWarning',
+  'Write-ProcessToPidFile'
+)
+
+$VariablesToExport = @(
+  'CackledaemonConfigLocation',
+  'CackledaemonWD'
+)
+
+Export-ModuleMember `
+  -Alias $AliasesToExport `
+  -Function $FunctionsToExport `
+  -Variable $VariablesToExport
+
+#+END_SRC
+
+However, the package exports a much smaller subset of these, namely functions
+intended to be touched by end users and by the install wizard (which is packaged
+as a script rather than as part of the module).
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psd1
+  AliasesToExport = @('Invoke-CDInstallWizard')
+
+  FunctionsToExport = @(
+    'Disable-CDLogRotateJob',
+    'Enable-CDLogRotateJob',
+    'Get-EmacsDaemon',
+    'Install-CDApplet',
+    'Install-Emacs',
+    'Install-EmacsUserEnvironment',
+    'Install-FileTypeAssociations',
+    'Install-CDShortcuts',
+    'Invoke-CDApplet',
+    'New-CackledaemonWD',
+    'Restart-EmacsDaemon',
+    'Set-EmacsAppPathRegistryKeys',
+    'Start-EmacsDaemon',
+    'Stop-EmacsDaemon',
+    'Test-EmacsExe',
+    'Update-EmacsInstall',
+    'Write-CDDebug',
+    'Write-CDError',
+    'Write-CDFatal',
+    'Write-CDInfo',
+    'Write-CDLog',
+    'Write-CDWarning'
+  )
+
+  VariablesToExport = @(
+    'CackledaemonConfigLocation',
+    'CackledaemonWD'
+  )
+
+#+END_SRC
+
+In addition to the module file and the package manifest, the Cackledaemon
+package also includes default configuration files, the applet launcher, the
+installer wizard script and a copy of the GNU General Public License.
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psd1
+  FileList = @(
+    'Applet.vbs',
+    'Cackledaemon.psm1',
+    'Cackledaemon.psd1',
+    'Configuration.ps1',
+    'COPYING',
+    'InstallWizard.ps1',
+    'Shortcuts.csv'
+  )
+
+  ModuleList = @('.\Cackledaemon.psm1')
+
+#+END_SRC
+
+The Cackledaemon project is [[https://github.com/jfhbrook/Cackledaemon][hosted on GitHub]].
+
+#+BEGIN_SRC powershell :tangle ./Cackledaemon/Cackledaemon.psd1
+  PrivateData = @{
+    PSData = @{
+      Tags = @('emacs')
+      LicenseUri = 'https://github.com/jfhbrook/Cackledaemon/blob/master/COPYING'
+      ProjectUri = 'https://github.com/jfhbrook/Cackledaemon'
+      ReleaseNotes = 'The ChangeLog for this project may be found at https://github.com/jfhbrook/Cackledaemon/blob/master/Cackledaemon.org#changelog .'
+    }
+  }
+}
+
+#+END_SRC
+* Publishing Cackledaemon
+This project can be published on the Powershell Gallery by running
+=Invoke-Build Publish.= In order for it to succeed, there must be a
+=.\Secrets.ps1= file that defines =$PowershellGalleryAPIKey= as a valid
+Powershell Gallery NuGet API key. This file gets sourced by the ~Publish~ task.
+
+If any PowerShell experts out there have alternate suggestions, feel free to
+reach out to the author.
+
+#+BEGIN_SRC powershell :tangle Cackledaemon.Build.ps1
+task Publish Build, Lint, Test, {
+    . .\Secrets.ps1
+     Publish-Module -Path .\Cackledaemon\ -NuGetApiKey $PowershellGalleryAPIKey
+}
+#+END_SRC
+
+* ChangeLog :export:
+** 2020-05-16 Release v0.1.7
+- Shortcuts directory is created if it doesn't already exist when installing the
+  applet shortcuts
+** 2020-05-15 Release v0.1.6
+- Shortcuts directory is created if it doesn't already exist when installing
+  Emacs shortcuts
+** 2020-05-15 Release v0.1.5
+- When there is no Shortcuts.csv file, shortcuts in the Gnu Emacs directory are unmodified.
+** 2020-05-14 Release v0.1.4
+- Add linting
+- Patch a bug in ~Invoke-CDApplet~ that breaks stopping the Emacs daemon
+** 2020-05-14 Release v0.1.3
+- Quote module path to support paths with spaces in them
+** 2020-05-14 Release v0.1.2
+- ~Get-Command~ call in install wizard is now silent when Emacs isn't installed
+- Ensure PSeudo is at least version 1.0 in manifest
+- Explicitly install Cackledaemon as the current user
+** 2020-05-11 Release v0.1.1
+- Copy edits to the introduction
+- A link to the release announcement blog post
+- An update to the copy-paste install snippet to capitalize Cackledaemon
+- Notes on contributing
+** 2020-05-11 Release v0.1.0
+- The first feature-complete release of Cackledaemon!
+* License Headers
+#+NAME: license-header
+#+BEGIN_SRC powershell
+# Copyright 2020 Josh Holbrook
+#
+# This file is part of Cackledaemon and 100% definitely not a part of Emacs.
+#
+# Cackledaemon is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Cackledaemon is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Cackledaemon.  if not, see <https://www.gnu.org/licenses/>.
+#+END_SRC
+
+#+NAME: emacs-lisp-license-header
+#+BEGIN_SRC emacs-lisp
+;; Copyright 2020 Josh Holbrook
+;;
+;; This file is part of Cackledaemon and 100% definitely not a part of Emacs.
+;; Cackledaemon is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; Cackledaemon is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with Cackledaemon.  if not, see <https://www.gnu.org/licenses/>.
+#+END_SRC
+
+#+NAME: vbscript-license-header
+#+BEGIN_SRC vbscript
+' Copyright 2020 Josh Holbrook
+'
+' This file is part of Cackledaemon and 100% definitely not a part of Emacs.
+'
+' Cackledaemon is free software: you can redistribute it and/or modify
+' it under the terms of the GNU General Public License as published by
+' the Free Software Foundation, either version 3 of the License, or
+' (at your option) any later version.
+'
+' Cackledaemon is distributed in the hope that it will be useful,
+' but WITHOUT ANY WARRANTY; without even the implied warranty of
+' MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+' GNU General Public License for more details.
+'
+' You should have received a copy of the GNU General Public License
+' along with Cackledaemon.  if not, see <https://www.gnu.org/licenses/>.
+#+END_SRC
