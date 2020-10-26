@@ -1,0 +1,9 @@
+name: gshell.py
+
+dependencies:
+  - python=3.7.2
+  - pip=19.0.3
+  - pytest=4.6.2
+  - twine=1.13.0
+  - pip:
+    - flake8==3.7.7
