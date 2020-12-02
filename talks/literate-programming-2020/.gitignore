@@ -3,3 +3,9 @@ _minted-talk
 .auctex-auto
 hello-express/**
 talk.tex
+*.aux
+*.out
+*.nav
+*.snm
+*.toc
+*.vrb

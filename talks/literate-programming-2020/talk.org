@@ -79,8 +79,9 @@
   dilapidated and rarely used in 2020
 - Haskell is one of the few languages with [[https://wiki.haskell.org/Literate_programming][first-class support]] for literate
   programming
-- Jupyter notebooks are sometimes referred to as literate but aren't flexible
-  enough to truly rise to the occasion
+- Jupyter notebooks are sometimes referred to as literate - and there are
+  literate frameworks such as [[https://github.com/fastai/nbdev][nbdev]] - but aren't flexible enough to truly rise
+  to the occasion
 ** Then There's Org Mode
 - Org mode has great support for literate programming
 - This makes org mode unusual!
@@ -290,16 +291,18 @@ We can *build* this presentation using ~C-c C-e~!
 - Weave: ~C-c C-e~
 * Where I've Used Org-Mode and Literate Programming
 ** My Emacs Setup
-I have an org file for my Emacs config and Nextcloud instance
+I have org files for my Emacs config and my Nextcloud instance
 
-- It tangles Emacs lisp code to =~/.doom.d= (I use Doom)
-- It tangles Nix configs, Terraform files and Ansible playbooks for managing the
+- The config file tangles Emacs lisp code to =~/.doom.d= (I use Doom)
+- The ops file tangles Nix configs, Terraform files and Ansible playbooks for managing the
   cloud instance
-- It tangles both a Makefile and an Invoke-Build file for PowerShell/Windows
-- It's arranged by feature (not file) and includes notes on what I was trying to
+- The ops file tangles both a Makefile and an Invoke-Build file for PowerShell/Windows
+- The ops file is arranged by feature (not file) and includes notes on what I was trying to
   accomplish
+- These could be in one file and are only split for access reasons (I use the
+  Emacs config at work)
 ** Leetcode problems
-I have a repository somewhere for hanging onto the source code for some
+I have a folder in my private monorepo for hanging onto the source code for some
 challenging Leetcode problems I've encountered
 
 - A program can include not just the code but the how/why - a full explanation
@@ -316,7 +319,7 @@ I wrote a project in PowerShell that runs the Emacs daemon in a tray icon
   Emacs in Windows "natively" and is intended to be a reference as much as it is
   a framework
 - The document exports into an abbreviated README
-- [[https://github.com/jfhbrook/Cackledaemon][It's open source! (GPLv3+)]]
+- [[https://github.com/jfhbrook/public-gpl/tree/main/Cackledaemon][It's open source! (GPLv3+)]]
 * Good Things about Org-Mode and Literate Programming
 ** Organizationally They're Quite Good
 - Literate programs can be organized the way my brain is
