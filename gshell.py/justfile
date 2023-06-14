@@ -1,0 +1,27 @@
+test:
+  pytest -vvv ./tests
+
+lint:
+  flake8 ./gshell.py ./tests
+
+package:
+  python setup.py check
+  python setup.py sdist
+  python setup.py bdist_wheel --universal
+
+upload:
+  twine upload dist/*
+
+clean:
+  rm -rf build
+  rm -rf dist
+
+# Apply the COPR configuration
+apply-copr:
+  coprctl apply -f ./package.yml
+
+# Build the package on COPR
+build-copr:
+  copr build-package 'jfhbrook/joshiverse' --name 'python3-twisted_ipython'
+
+
