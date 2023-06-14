@@ -1,19 +1,6 @@
 #+title: Josh Holbrook's GPL-compatible Free Software
 
-* Hello
-This repository contains my open source repositories that are licensed under
-either the GPL or GPL-compatible licenses.
-
-For my non-GPL open source software, check out
-[[https://github.com/jfhbrook/public][my public repository]].
-
-Each project should be well-documented and with relevant license files.
-* Contents
-** gshell.py
-This is a straight port of GLib's gshell.c to Python. It is licensed under the
-LGPL v2.1 or later, at your option.
-** attic
-These are projects I don't maintain anymore.
+* attic
 ** Cackledaemon
 This is a project I wrote for managing my Emacs install on Windows 10. It
 contains an org-based literate program that encodes a PowerShell module and
