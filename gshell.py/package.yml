@@ -1,7 +1,7 @@
 apiVersion: coprctl/v1alpha1
 kind: package-pypi
 metadata:
-  name: python3-gshell.py
+  name: python-gshell.py
 spec:
   auto_rebuild: true
   projectname: jfhbrook/joshiverse

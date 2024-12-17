@@ -22,6 +22,6 @@ apply-copr:
 
 # Build the package on COPR
 build-copr:
-  copr build-package 'jfhbrook/joshiverse' --name 'python3-gshell.py'
+  copr build-package 'jfhbrook/joshiverse' --name 'python-gshell.py'
 
 
